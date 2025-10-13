@@ -1,29 +1,45 @@
 
 #
-# JA3 module conf
+# SSL_FINGERPRINT module conf
 #
 
-ngx_addon_name=ngx_ssl_fingerprint_module
+ngx_http_addon_name=ngx_http_ssl_fingerprint_module
+ngx_stream_addon_name=ngx_stream_ssl_fingerprint_preread_module
 
-CORE_LIBS="$CORE_LIBS"
-CORE_INCS="$CORE_INCS $ngx_addon_dir/src"
+SSL_FINGERPRINT_DEPS="$ngx_addon_dir/src/nginx_ssl_fingerprint.h"
+COMMON_SSL_FINGERPRINT_SRCS="$ngx_addon_dir/src/nginx_ssl_fingerprint.c"
+HTTP_SSL_FINGERPRINT_SRCS="$ngx_addon_dir/src/ngx_http_ssl_fingerprint_module.c"
+STREAM_SSL_FINGERPRINT_SRCS="$ngx_addon_dir/src/ngx_stream_ssl_fingerprint_preread_module.c"
 
-HTTP_MODULES="$HTTP_MODULES ngx_http_ssl_fingerprint_module"
+if [ -n "$ngx_module_link" ]; then
+  ngx_module_incs="$ngx_addon_dir/src"
 
-stream_module=""
+  ngx_module_type=HTTP
+  ngx_module_name=$ngx_http_addon_name
+  ngx_module_deps="$SSL_FINGERPRINT_DEPS"
+  ngx_module_srcs="$HTTP_SSL_FINGERPRINT_SRCS $COMMON_SSL_FINGERPRINT_SRCS"
 
-if [ $STREAM_SSL = YES ]; then
-  echo "[+] ngx_stream_ssl_fingerprint_preread_module included"
-  STREAM_MODULES="ngx_stream_ssl_fingerprint_preread_module $STREAM_MODULES"
-  stream_module="$ngx_addon_dir/src/ngx_stream_ssl_fingerprint_preread_module.c"
+  . auto/module
+
+  if [ $STREAM_SSL = YES ]; then
+    ngx_module_type=STREAM
+    ngx_module_name=$ngx_stream_addon_name
+    ngx_module_deps="$SSL_FINGERPRINT_DEPS"
+    ngx_module_srcs="$STREAM_SSL_FINGERPRINT_SRCS $COMMON_SSL_FINGERPRINT_SRCS"
+
+    . auto/module
+  fi
 else
-  echo "[-] ngx_stream_ssl_fingerprint_preread_module will no be compiled"
+  HTTP_MODULES="$HTTP_MODULES $ngx_http_addon_name"
+  NGX_ADDON_DEPS="$NGX_ADDON_DEPS $SSL_FINGERPRINT_DEPS"
+  NGX_ADDON_SRCS="$NGX_ADDON_SRCS \
+    $COMMON_SSL_FINGERPRINT_SRCS \
+    $HTTP_SSL_FINGERPRINT_SRCS \
+    $stream_module"
+
+  if [ $STREAM_SSL = YES ]; then
+    STREAM_MODULES="$STREAM_MODULES $ngx_stream_addon_name"
+    NGX_ADDON_SRCS="$NGX_ADDON_SRCS \
+      $STREAM_SSL_FINGERPRINT_SRCS"
+  fi
 fi
-
-NGX_ADDON_SRCS="$NGX_ADDON_SRCS \
-  $ngx_addon_dir/src/nginx_ssl_fingerprint.c \
-  $ngx_addon_dir/src/ngx_http_ssl_fingerprint_module.c \
-  $stream_module"
-
-have=NGX_JA3_FINGERPRING_MODULE  . auto/have
-
