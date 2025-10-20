@@ -5,6 +5,8 @@
 
 #include <nginx_ssl_fingerprint.h>
 
+extern int ngx_ssl_is_setting_client_hello_ja4_callback;
+
 static ngx_int_t ngx_http_ssl_fingerprint_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_ssl_greased(ngx_http_request_t *r,
                             ngx_http_variable_value_t *v, uintptr_t data);
@@ -13,6 +15,14 @@ static ngx_int_t ngx_http_ssl_fingerprint(ngx_http_request_t *r,
 static ngx_int_t ngx_http_ssl_fingerprint_hash(ngx_http_request_t *r,
                              ngx_http_variable_value_t *v, uintptr_t data);
 static ngx_int_t ngx_http_http2_fingerprint(ngx_http_request_t *r,
+                            ngx_http_variable_value_t *v, uintptr_t data);
+static ngx_int_t ngx_http_ssl_ja4_r_fingerprint(ngx_http_request_t *r,
+                            ngx_http_variable_value_t *v, uintptr_t data);
+static ngx_int_t ngx_http_ssl_ja4_fingerprint(ngx_http_request_t *r,
+                            ngx_http_variable_value_t *v, uintptr_t data);
+static ngx_int_t ngx_http_ssl_ja4_ro_fingerprint(ngx_http_request_t *r,
+                            ngx_http_variable_value_t *v, uintptr_t data);
+static ngx_int_t ngx_http_ssl_ja4_o_fingerprint(ngx_http_request_t *r,
                             ngx_http_variable_value_t *v, uintptr_t data);
 
 static ngx_http_module_t ngx_http_ssl_fingerprint_module_ctx = {
@@ -48,6 +58,14 @@ static ngx_http_variable_t ngx_http_ssl_fingerprint_variables_list[] = {
     {ngx_string("http_ssl_ja3_hash"), NULL, ngx_http_ssl_fingerprint_hash,
      0, NGX_HTTP_VAR_NOCACHEABLE, 0},
     {ngx_string("http2_fingerprint"), NULL, ngx_http_http2_fingerprint,
+     0, NGX_HTTP_VAR_NOCACHEABLE, 0},
+    {ngx_string("http_ssl_ja4_r"), NULL, ngx_http_ssl_ja4_r_fingerprint,
+     0, NGX_HTTP_VAR_NOCACHEABLE, 0},
+    {ngx_string("http_ssl_ja4"), NULL, ngx_http_ssl_ja4_fingerprint,
+     0, NGX_HTTP_VAR_NOCACHEABLE, 0},
+    {ngx_string("http_ssl_ja4_ro"), NULL, ngx_http_ssl_ja4_ro_fingerprint,
+     0, NGX_HTTP_VAR_NOCACHEABLE, 0},
+    {ngx_string("http_ssl_ja4_o"), NULL, ngx_http_ssl_ja4_o_fingerprint,
      0, NGX_HTTP_VAR_NOCACHEABLE, 0},
     ngx_http_null_variable
 };
@@ -147,6 +165,98 @@ ngx_http_http2_fingerprint(ngx_http_request_t *r,
 }
 
 static ngx_int_t
+ngx_http_ssl_ja4_r_fingerprint(ngx_http_request_t *r,
+                 ngx_http_variable_value_t *v, uintptr_t data)
+{
+    /* For access.log's map $VAR {}:
+     * if it's not found, then user could add a defined string */
+    v->not_found = 1;
+
+    if (r->connection->ssl == NULL) {
+        return NGX_OK;
+    }
+
+    if (ngx_ssl_ja4_r(r->connection) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    v->data = r->connection->ssl->fp_ja4_r.data;
+    v->len = r->connection->ssl->fp_ja4_r.len;
+    v->not_found = 0;
+
+    return NGX_OK;
+}
+
+static ngx_int_t
+ngx_http_ssl_ja4_fingerprint(ngx_http_request_t *r,
+                 ngx_http_variable_value_t *v, uintptr_t data)
+{
+    /* For access.log's map $VAR {}:
+     * if it's not found, then user could add a defined string */
+    v->not_found = 1;
+
+    if (r->connection->ssl == NULL) {
+        return NGX_OK;
+    }
+
+    if (ngx_ssl_ja4(r->connection) != NGX_OK) {
+        return NGX_OK;
+    }
+
+    v->data = r->connection->ssl->fp_ja4.data;
+    v->len = r->connection->ssl->fp_ja4.len;
+    v->not_found = 0;
+
+    return NGX_OK;
+}
+
+static ngx_int_t
+ngx_http_ssl_ja4_ro_fingerprint(ngx_http_request_t *r,
+                 ngx_http_variable_value_t *v, uintptr_t data)
+{
+    /* For access.log's map $VAR {}:
+     * if it's not found, then user could add a defined string */
+    v->not_found = 1;
+
+    if (r->connection->ssl == NULL) {
+        return NGX_OK;
+    }
+
+    if (ngx_ssl_ja4_ro(r->connection) != NGX_OK) {
+        return NGX_ERROR;
+    }
+
+    v->data = r->connection->ssl->fp_ja4_ro.data;
+    v->len = r->connection->ssl->fp_ja4_ro.len;
+    v->not_found = 0;
+
+    return NGX_OK;
+}
+
+static ngx_int_t
+ngx_http_ssl_ja4_o_fingerprint(ngx_http_request_t *r,
+                 ngx_http_variable_value_t *v, uintptr_t data)
+{
+    /* For access.log's map $VAR {}:
+     * if it's not found, then user could add a defined string */
+    v->not_found = 1;
+
+    if (r->connection->ssl == NULL) {
+        return NGX_OK;
+    }
+
+    if (ngx_ssl_ja4_o(r->connection) != NGX_OK) {
+        return NGX_OK;
+    }
+
+    v->data = r->connection->ssl->fp_ja4_o.data;
+    v->len = r->connection->ssl->fp_ja4_o.len;
+    v->not_found = 0;
+
+    return NGX_OK;
+}
+
+static ngx_int_t
 ngx_http_ssl_fingerprint_init(ngx_conf_t *cf)
 {
     ngx_http_variable_t  *var, *v;
@@ -161,6 +271,8 @@ ngx_http_ssl_fingerprint_init(ngx_conf_t *cf)
         var->get_handler = v->get_handler;
         var->data = v->data;
     }
+
+    ngx_ssl_is_setting_client_hello_ja4_callback = 1;
 
     return NGX_OK;
 }
