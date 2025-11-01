@@ -1,0 +1,431 @@
+diff --git a/src/event/ngx_event_openssl.c b/src/event/ngx_event_openssl.c
+index 5175d7a7e..66029ffa0 100644
+--- a/src/event/ngx_event_openssl.c
++++ b/src/event/ngx_event_openssl.c
+@@ -2078,6 +2078,291 @@ ngx_ssl_set_session(ngx_connection_t *c, ngx_ssl_session_t *session)
+ }
+ 
+ 
++#define IS_GREASE_CODE(code) (((code) & 0x0f0f) == 0x0a0a                     \
++                              && ((code) & 0xff) == ((code) >> 8))
++
++#define ngx_is_alnum(c) ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')     \
++                         || (c >= '0' && c <= '9'))
++
++
++#ifdef LOG_CLIENT_HELLO
++
++static void
++log_ssl_ext(ngx_connection_t *c, const char *type, const unsigned char *data,
++    size_t len)
++{
++    ngx_str_t hex;
++
++    hex.len = 2 * len;
++    hex.data = ngx_pnalloc(c->pool, hex.len);
++    if (hex.data == NULL) {
++        ngx_log_error(NGX_LOG_ERR, c->log, 0, "log_ssl_ext "
++                      "out of memory for hex");
++        return;
++    }
++    ngx_hex_dump(hex.data, (u_char *) data, len);
++    ngx_log_error(NGX_LOG_NOTICE, c->log, 0, "ja4_cb: ssl_ext_type=%s, len=%z, data=%V",
++                  type, len, &hex);
++}
++
++
++static void
++log_bytes(ngx_connection_t *c, const char *label, const u_char *data,
++    size_t len)
++{
++    ngx_str_t hex;
++
++    hex.len = 2 * len;
++    hex.data = ngx_pnalloc(c->pool, hex.len);
++    if (hex.data == NULL) {
++        ngx_log_error(NGX_LOG_ERR, c->log, 0, "ngx_event_openssl.log_bytes "
++                      "out of memory for hex");
++        return;
++    }
++    ngx_hex_dump(hex.data, (u_char *) data, len);
++    ngx_log_error(NGX_LOG_NOTICE, c->log, 0, "ja4_cb: label=%s, len=%z, data=%V",
++                  label, len, &hex);
++}
++
++#else
++
++#define log_ssl_ext(c, type, data, len)  do {} while (0)
++#define log_bytes(c, label, data, len)  do {} while (0)
++
++#endif
++
++static u_char *
++append_uint16(u_char *dest, uint16_t val)
++{
++    return ngx_copy(dest, &val, sizeof(uint16_t));
++}
++
++int
++ngx_ssl_client_hello_ja4_cb(SSL *s, int *al, void *arg)
++{
++    ngx_connection_t  *c = arg;
++    ngx_str_t         *ja;
++    size_t             ciphers_len = 0, groups_len = 0, formats_len = 0,
++                       num_exts = 0, versions_len = 0, alpn_len = 0,
++                       sig_algos_len = 0, i;
++    int                is_sni = 0;
++    const u_char      *ciphers = NULL, *groups = NULL, *formats = NULL,
++                      *versions = NULL, *alpn = NULL, *sig_algos = NULL;
++    u_char            *ptr;
++    uint16_t           legacy_version, *exts = NULL, exts_len = 0;
++
++    if (c == NULL) {
++        return SSL_CLIENT_HELLO_SUCCESS;
++    }
++
++    if (c->ssl == NULL) {
++        return SSL_CLIENT_HELLO_SUCCESS;
++    }
++
++    /* get received extensions */
++    SSL_client_hello_get0_received_ext(s, NULL, &num_exts);
++    exts_len = num_exts * sizeof(uint16_t);
++
++    ciphers_len = SSL_client_hello_get0_ciphers(s, &ciphers);
++    log_ssl_ext(c, "ciphers", ciphers, ciphers_len);
++
++    SSL_client_hello_get0_ext(s, TLSEXT_TYPE_supported_groups, &groups,
++                              &groups_len);
++    SSL_client_hello_get0_ext(s, TLSEXT_TYPE_ec_point_formats, &formats,
++                              &formats_len);
++
++    /* ja3 */
++    ja = &c->ssl->fp_ja3_data;
++    ja->len = sizeof(uint16_t)                                 /* version */
++            + sizeof(uint16_t)                                 /* ciphers_len */
++            + ciphers_len                                      /* ciphers */
++            + sizeof(uint16_t)                                 /* exts_len */
++            + exts_len                                         /* extensions */
++            + (groups_len > 0 ? groups_len : sizeof(uint16_t))   /* groups */
++            + (formats_len > 0 ? formats_len : sizeof(uint8_t)); /* formats */
++
++    ja->data = ngx_pnalloc(c->pool, ja->len);
++    if (ja->data == NULL) {
++        ngx_log_error(NGX_LOG_ERR, c->log, 0, "ngx_ssl_client_hello_ja4_cb "
++                      "out of memory for fp_ja3_data");
++        ja->len = 0;
++        goto failed;
++    }
++
++    ptr = ja->data;
++
++    /* version */
++    legacy_version = (uint16_t) SSL_client_hello_get0_legacy_version(s);
++    ptr = append_uint16(ptr, legacy_version);
++
++    /* ciphers */
++    ptr = append_uint16(ptr, (uint16_t) ciphers_len);
++    ptr = ngx_copy(ptr, ciphers, ciphers_len);
++
++    /* extensions */
++    ptr = append_uint16(ptr, exts_len);
++    exts = (uint16_t *) ptr;
++    if (((uintptr_t) exts) % 2 != 0) {
++        ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_client_hello_ja4_cb "
++                      "ext destination is not 2-byte aligned");
++    }
++    SSL_client_hello_get0_received_ext(s, exts, &num_exts);
++    log_bytes(c, "exts", (const u_char *) exts, exts_len);
++    ptr = ngx_copy(ptr, exts, exts_len);
++
++    /* groups */
++    if (groups_len > 0) {
++        memcpy(ptr, groups, groups_len);
++        *(uint16_t*) ptr = (uint16_t) groups_len;
++        ptr += groups_len;
++    } else {
++        *(uint16_t *) ptr = (uint16_t) 0;
++        ptr += sizeof(uint16_t);
++    }
++
++    /* formats */
++    if (formats_len > 0) {
++        memcpy(ptr, formats, formats_len);
++        *(uint8_t *) ptr = (uint8_t) formats_len;
++        ptr += formats_len;
++    } else {
++        *(uint8_t *) ptr = (uint8_t) 0;
++        ptr += sizeof(uint8_t);
++    }
++
++    if (ptr != ja->data + ja->len) {
++        ngx_log_error(NGX_LOG_ERR, c->log, 0, "ngx_ssl_client_hello_ja4_cb "
++                      "length mismatch for ja3");
++        ja->data = NULL;
++    }
++
++    /* ja4 */
++    ja = &c->ssl->fp_ja4_data;
++
++    for (i = 0; i < num_exts; i++) {
++        if (exts[i] == TLSEXT_TYPE_server_name) {
++            is_sni = 1;
++        }
++    }
++
++    SSL_client_hello_get0_ext(s, TLSEXT_TYPE_signature_algorithms, &sig_algos,
++                              &sig_algos_len);
++
++    ja->len = sizeof(char)      /* protocol */
++            + sizeof(char)      /* sni */
++            + sizeof(uint16_t)  /* version */
++            + sizeof(char) * 2  /* first ALPN */
++            + sizeof(uint16_t)  /* ciphers_len */
++            + ciphers_len       /* ciphers */
++            + sizeof(uint16_t)  /* exts_len */
++            + exts_len          /* extensions */
++            + sizeof(uint16_t)  /* sig_algos_len */
++            + sig_algos_len;    /* sig_algos */
++
++    ja->data = ngx_pnalloc(c->pool, ja->len);
++    if (ja->data == NULL) {
++        ngx_log_error(NGX_LOG_ERR, c->log, 0, "ngx_ssl_client_hello_ja4_cb "
++                      "out of memory for fp_ja4_data");
++        ja->len = 0;
++        goto failed;
++    }
++
++    ptr = ja->data;
++
++    SSL_client_hello_get0_ext(s, TLSEXT_TYPE_supported_versions, &versions,
++                              &versions_len);
++    SSL_client_hello_get0_ext(s,
++                             TLSEXT_TYPE_application_layer_protocol_negotiation,
++                             &alpn, &alpn_len);
++
++    /* protocol */
++#if OPENSSL_VERSION_NUMBER >= 0x30200000L
++    *ptr++ = (u_char) (SSL_is_quic(s)
++                       ? 'q'
++                       : SSL_is_dtls(s) ? 'd' : 't');
++#else
++    *ptr++ = (u_char) (SSL_is_dtls(s) ? 'd' : 't');
++#endif
++
++    /* sni */
++    *ptr++ = (u_char) (is_sni ? 'd' : 'i');
++
++    /* version */
++    log_ssl_ext(c, "versions", versions, versions_len);
++    if (versions_len > 0) {
++        uint16_t max_version = 0;
++        for (i = 1; i < versions_len; i += 2) {
++            uint16_t version = (versions[i] << 8) | versions[i + 1];
++            ngx_log_error(NGX_LOG_NOTICE, c->log, 0, "ngx_ssl_client_hello_ja4_cb "
++                          "i=%d, version=%d", i, version);
++            if (!IS_GREASE_CODE(version) && version > max_version) {
++                max_version = version;
++            }
++        }
++        ptr = append_uint16(ptr, max_version);
++    } else {
++        ptr = append_uint16(ptr, legacy_version);
++    }
++
++    /* first ALPN */
++    log_ssl_ext(c, "alpn", alpn, alpn_len);
++    if (alpn_len > 0) {
++        uint8_t        first_alpn_len, first, last;
++        static u_char  hex[] = "0123456789abcdef";
++
++        // The first two bytes are a 16bit encoding of the total length.
++        if (alpn_len < 5) {
++            ngx_log_error(NGX_LOG_ERR, c->log, 0,
++                          "ngx_ssl_client_hello_ja4_cb "
++                          "too short alpn_len=%d", alpn_len);
++            ja->data = NULL;
++            goto failed;
++        }
++
++        first_alpn_len = alpn[2];
++        if (first_alpn_len == 0 || (size_t) 3 + first_alpn_len > alpn_len) {
++            ngx_log_error(NGX_LOG_ERR, c->log, 0,
++                          "ngx_ssl_client_hello_ja4_cb "
++                          "invalid first_alpn_len=%d, alpn_len=%d",
++                          first_alpn_len, alpn_len);
++            ja->data = NULL;
++            goto failed;
++        }
++
++        first = alpn[3];
++        last = alpn[3 + first_alpn_len - 1];
++        *ptr++ = ngx_is_alnum(first) ? first : hex[first >> 4];
++        *ptr++ = ngx_is_alnum(last) ? last : hex[last & 0x0f];
++    } else {
++        ptr = ngx_copy(ptr, "00", 2);
++    }
++
++    /* ciphers */
++    ptr = append_uint16(ptr, (uint16_t) ciphers_len);
++    ptr = ngx_copy(ptr, ciphers, ciphers_len);
++
++    /* extensions */
++    ptr = append_uint16(ptr, exts_len);
++    ptr = ngx_copy(ptr, exts, exts_len);
++
++    /* signature algoritms */
++    ptr = append_uint16(ptr, (uint16_t) sig_algos_len);
++    ptr = ngx_copy(ptr, sig_algos, sig_algos_len);
++
++    if (ptr != ja->data + ja->len) {
++        ngx_log_error(NGX_LOG_ERR, c->log, 0, "ngx_ssl_client_hello_ja4_cb "
++                      "length mismatch for ja4");
++        ja->data = NULL;
++    }
++
++    ngx_log_error(NGX_LOG_NOTICE, c->log, 0, "ja4_cb exit");
++
++failed:
++    return SSL_CLIENT_HELLO_SUCCESS;
++}
++
++int ngx_ssl_is_setting_client_hello_ja4_callback = 0;
++
+ ngx_int_t
+ ngx_ssl_handshake(ngx_connection_t *c)
+ {
+@@ -2097,6 +2382,11 @@ ngx_ssl_handshake(ngx_connection_t *c)
+ 
+     ngx_ssl_clear_error(c->log);
+ 
++    if (ngx_ssl_is_setting_client_hello_ja4_callback) {
++        (void) SSL_CTX_set_client_hello_cb(c->ssl->session_ctx,
++                                           ngx_ssl_client_hello_ja4_cb, c);
++    }
++
+     n = SSL_do_handshake(c->ssl->connection);
+ 
+     ngx_log_debug1(NGX_LOG_DEBUG_EVENT, c->log, 0, "SSL_do_handshake: %d", n);
+diff --git a/src/event/ngx_event_openssl.h b/src/event/ngx_event_openssl.h
+index ae0e173de..56abca7a5 100644
+--- a/src/event/ngx_event_openssl.h
++++ b/src/event/ngx_event_openssl.h
+@@ -144,6 +144,17 @@ struct ngx_ssl_connection_s {
+     unsigned                    early_preread:1;
+     unsigned                    write_blocked:1;
+     unsigned                    sni_accepted:1;
++
++    ngx_str_t                   fp_ja3_data;
++    ngx_str_t                   fp_ja3_str;
++    ngx_str_t                   fp_ja3_hash;
++    uint16_t                    fp_tls_greased;
++
++    ngx_str_t                   fp_ja4_data;
++    ngx_str_t                   fp_ja4_r;
++    ngx_str_t                   fp_ja4;
++    ngx_str_t                   fp_ja4_ro;
++    ngx_str_t                   fp_ja4_o;
+ };
+ 
+ 
+diff --git a/src/http/v2/ngx_http_v2.c b/src/http/v2/ngx_http_v2.c
+index fe9ee5a88..0249e3d1f 100644
+--- a/src/http/v2/ngx_http_v2.c
++++ b/src/http/v2/ngx_http_v2.c
+@@ -307,6 +307,8 @@ ngx_http_v2_init(ngx_event_t *rev)
+         ngx_add_timer(rev, cscf->client_header_timeout);
+     }
+ 
++    h2c->fp_fingerprinted = 0;
++
+     c->idle = 1;
+     ngx_reusable_connection(c, 0);
+ 
+@@ -1358,6 +1360,14 @@ ngx_http_v2_state_headers(ngx_http_v2_connection_t *h2c, u_char *pos,
+         }
+     }
+ 
++    if (!h2c->fp_fingerprinted && h2c->fp_priorities.len < 32) {
++        h2c->fp_priorities.data[h2c->fp_priorities.len] = (uint8_t)stream->node->id;
++        h2c->fp_priorities.data[h2c->fp_priorities.len+1] = (uint8_t)excl;
++        h2c->fp_priorities.data[h2c->fp_priorities.len+2] = (uint8_t)depend;
++        h2c->fp_priorities.data[h2c->fp_priorities.len+3] = (uint8_t)(weight-1);
++        h2c->fp_priorities.len += 4;
++    }
++
+     return ngx_http_v2_state_header_block(h2c, pos, end);
+ 
+ rst_stream:
+@@ -1781,6 +1791,9 @@ ngx_http_v2_state_process_header(ngx_http_v2_connection_t *h2c, u_char *pos,
+     }
+ 
+     if (header->name.data[0] == ':') {
++        if (!h2c->fp_fingerprinted && h2c->fp_pseudoheaders.len < 32 && header->name.len > 1)
++            h2c->fp_pseudoheaders.data[h2c->fp_pseudoheaders.len++] = header->name.data[1];
++
+         rc = ngx_http_v2_pseudo_header(r, header);
+ 
+         if (rc == NGX_OK) {
+@@ -2200,6 +2213,12 @@ ngx_http_v2_state_settings_params(ngx_http_v2_connection_t *h2c, u_char *pos,
+         ngx_log_debug2(NGX_LOG_DEBUG_HTTP, h2c->connection->log, 0,
+                        "http2 setting %ui:%ui", id, value);
+ 
++        if (!h2c->fp_fingerprinted && h2c->fp_settings.len < 32) {
++            h2c->fp_settings.data[h2c->fp_settings.len] = (uint8_t)id;
++            *(uint32_t*)(h2c->fp_settings.data + h2c->fp_settings.len + 1)  = (uint32_t)value;
++            h2c->fp_settings.len += 5;
++        }
++
+         switch (id) {
+ 
+         case NGX_HTTP_V2_INIT_WINDOW_SIZE_SETTING:
+@@ -2484,6 +2503,9 @@ ngx_http_v2_state_window_update(ngx_http_v2_connection_t *h2c, u_char *pos,
+     }
+ 
+     h2c->send_window += window;
++    if (!h2c->fp_fingerprinted) {
++        h2c->fp_windowupdate = window;
++    }
+ 
+     while (!ngx_queue_empty(&h2c->waiting)) {
+         q = ngx_queue_head(&h2c->waiting);
+diff --git a/src/http/v2/ngx_http_v2.h b/src/http/v2/ngx_http_v2.h
+index 9605c8a23..026f3c7d7 100644
+--- a/src/http/v2/ngx_http_v2.h
++++ b/src/http/v2/ngx_http_v2.h
+@@ -17,6 +17,8 @@
+ 
+ #define NGX_HTTP_V2_STATE_BUFFER_SIZE    16
+ 
++#define NGX_FP_V2_BUFFER_SIZE            32
++
+ #define NGX_HTTP_V2_DEFAULT_FRAME_SIZE   (1 << 14)
+ #define NGX_HTTP_V2_MAX_FRAME_SIZE       ((1 << 24) - 1)
+ 
+@@ -121,6 +123,12 @@ typedef struct {
+ } ngx_http_v2_hpack_t;
+ 
+ 
++typedef struct {
++  u_char data[NGX_FP_V2_BUFFER_SIZE];
++  size_t len;
++} ngx_http_v2_fp_fixed_str_t;
++
++
+ struct ngx_http_v2_connection_s {
+     ngx_connection_t                *connection;
+     ngx_http_connection_t           *http_connection;
+@@ -168,6 +176,13 @@ struct ngx_http_v2_connection_s {
+     unsigned                         table_update:1;
+     unsigned                         blocked:1;
+     unsigned                         goaway:1;
++
++    unsigned                         fp_fingerprinted:1;
++    ngx_http_v2_fp_fixed_str_t       fp_settings,
++                                     fp_priorities,
++                                     fp_pseudoheaders;
++    ngx_uint_t                       fp_windowupdate;
++    ngx_str_t                        fp_str;
+ };
+ 
+ 
