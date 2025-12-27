@@ -9,12 +9,12 @@
 #include <ngx_stream.h>
 #include <ngx_md5.h>
 
-extern int ngx_ssl_ja3(ngx_connection_t *c);
-extern int ngx_ssl_ja3_hash(ngx_connection_t *c);
-extern int ngx_ssl_ja4_r(ngx_connection_t *c);
-extern int ngx_ssl_ja4(ngx_connection_t *c);
-extern int ngx_ssl_ja4_ro(ngx_connection_t *c);
-extern int ngx_ssl_ja4_o(ngx_connection_t *c);
+extern int ngx_ssl_fingerprint_ja3(ngx_connection_t *c);
+extern int ngx_ssl_fingerprint_ja3_hash(ngx_connection_t *c);
+extern int ngx_ssl_fingerprint_ja4_r(ngx_connection_t *c);
+extern int ngx_ssl_fingerprint_ja4(ngx_connection_t *c);
+extern int ngx_ssl_fingerprint_ja4_ro(ngx_connection_t *c);
+extern int ngx_ssl_fingerprint_ja4_o(ngx_connection_t *c);
 extern int ngx_ssl_is_setting_client_hello_ja4_callback;
 
 static ngx_int_t ngx_stream_ssl_fingerprint_preread_init(ngx_conf_t *cf);
@@ -57,7 +57,7 @@ ngx_stream_ssl_greased(ngx_stream_session_t *s,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja3(s->connection) == NGX_DECLINED)
+    if (ngx_ssl_fingerprint_ja3(s->connection) == NGX_DECLINED)
     {
         return NGX_ERROR;
     }
@@ -73,7 +73,7 @@ ngx_stream_ssl_greased(ngx_stream_session_t *s,
 }
 
 static ngx_int_t
-ngx_stream_ssl_fingerprint(ngx_stream_session_t *s,
+ngx_stream_ssl_fingerprint_ja3(ngx_stream_session_t *s,
                  ngx_stream_variable_value_t *v, uintptr_t data)
 {
     if (s->connection == NULL)
@@ -86,7 +86,7 @@ ngx_stream_ssl_fingerprint(ngx_stream_session_t *s,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja3(s->connection) == NGX_DECLINED)
+    if (ngx_ssl_fingerprint_ja3(s->connection) == NGX_DECLINED)
     {
         return NGX_ERROR;
     }
@@ -101,7 +101,7 @@ ngx_stream_ssl_fingerprint(ngx_stream_session_t *s,
 }
 
 static ngx_int_t
-ngx_stream_ssl_fingerprint_hash(ngx_stream_session_t *s,
+ngx_stream_ssl_fingerprint_ja3_hash(ngx_stream_session_t *s,
                  ngx_stream_variable_value_t *v, uintptr_t data)
 {
     if (s->connection == NULL)
@@ -114,7 +114,7 @@ ngx_stream_ssl_fingerprint_hash(ngx_stream_session_t *s,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja3_hash(s->connection) == NGX_DECLINED)
+    if (ngx_ssl_fingerprint_ja3_hash(s->connection) == NGX_DECLINED)
     {
         return NGX_ERROR;
     }
@@ -129,7 +129,7 @@ ngx_stream_ssl_fingerprint_hash(ngx_stream_session_t *s,
 }
 
 static ngx_int_t
-ngx_stream_ssl_ja4_r_fingerprint(ngx_stream_session_t *s,
+ngx_stream_ssl_fingerprint_ja4_r(ngx_stream_session_t *s,
                  ngx_stream_variable_value_t *v, uintptr_t data)
 {
     if (s->connection == NULL)
@@ -142,7 +142,7 @@ ngx_stream_ssl_ja4_r_fingerprint(ngx_stream_session_t *s,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja4_r(s->connection) == NGX_DECLINED)
+    if (ngx_ssl_fingerprint_ja4_r(s->connection) == NGX_DECLINED)
     {
         return NGX_ERROR;
     }
@@ -157,7 +157,7 @@ ngx_stream_ssl_ja4_r_fingerprint(ngx_stream_session_t *s,
 }
 
 static ngx_int_t
-ngx_stream_ssl_ja4_fingerprint(ngx_stream_session_t *s,
+ngx_stream_ssl_fingerprint_ja4(ngx_stream_session_t *s,
                  ngx_stream_variable_value_t *v, uintptr_t data)
 {
     if (s->connection == NULL)
@@ -170,7 +170,7 @@ ngx_stream_ssl_ja4_fingerprint(ngx_stream_session_t *s,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja4(s->connection) == NGX_DECLINED)
+    if (ngx_ssl_fingerprint_ja4(s->connection) == NGX_DECLINED)
     {
         return NGX_ERROR;
     }
@@ -185,7 +185,7 @@ ngx_stream_ssl_ja4_fingerprint(ngx_stream_session_t *s,
 }
 
 static ngx_int_t
-ngx_stream_ssl_ja4_ro_fingerprint(ngx_stream_session_t *s,
+ngx_stream_ssl_fingerprint_ja4_ro(ngx_stream_session_t *s,
                  ngx_stream_variable_value_t *v, uintptr_t data)
 {
     if (s->connection == NULL)
@@ -198,7 +198,7 @@ ngx_stream_ssl_ja4_ro_fingerprint(ngx_stream_session_t *s,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja4_ro(s->connection) == NGX_DECLINED)
+    if (ngx_ssl_fingerprint_ja4_ro(s->connection) == NGX_DECLINED)
     {
         return NGX_ERROR;
     }
@@ -213,7 +213,7 @@ ngx_stream_ssl_ja4_ro_fingerprint(ngx_stream_session_t *s,
 }
 
 static ngx_int_t
-ngx_stream_ssl_ja4_o_fingerprint(ngx_stream_session_t *s,
+ngx_stream_ssl_fingerprint_ja4_o(ngx_stream_session_t *s,
                  ngx_stream_variable_value_t *v, uintptr_t data)
 {
     if (s->connection == NULL)
@@ -226,7 +226,7 @@ ngx_stream_ssl_ja4_o_fingerprint(ngx_stream_session_t *s,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja4_o(s->connection) == NGX_DECLINED)
+    if (ngx_ssl_fingerprint_ja4_o(s->connection) == NGX_DECLINED)
     {
         return NGX_ERROR;
     }
@@ -242,45 +242,45 @@ ngx_stream_ssl_ja4_o_fingerprint(ngx_stream_session_t *s,
 
 static ngx_stream_variable_t  ngx_stream_ssl_ja3_variables_list[] = {
 
-    {   ngx_string("stream_ssl_greased"),
+    {   ngx_string("ssl_greased"),
         NULL,
         ngx_stream_ssl_greased,
         0, 0, 0
     },
 
-    {   ngx_string("stream_ssl_ja3"),
+    {   ngx_string("ssl_fingerprint_ja3"),
         NULL,
-        ngx_stream_ssl_fingerprint,
+        ngx_stream_ssl_fingerprint_ja3,
         0, 0, 0
     },
 
-    {   ngx_string("stream_ssl_ja3_hash"),
+    {   ngx_string("ssl_fingerprint_ja3_hash"),
         NULL,
-        ngx_stream_ssl_fingerprint_hash,
+        ngx_stream_ssl_fingerprint_ja3_hash,
         0, 0, 0
     },
 
-    {   ngx_string("stream_ssl_ja4_r"),
+    {   ngx_string("ssl_fingerprint_ja4_r"),
         NULL,
-        ngx_stream_ssl_ja4_r_fingerprint,
+        ngx_stream_ssl_fingerprint_ja4_r,
         0, 0, 0
     },
 
-    {   ngx_string("stream_ssl_ja4"),
+    {   ngx_string("ssl_fingerprint_ja4"),
         NULL,
-        ngx_stream_ssl_ja4_fingerprint,
+        ngx_stream_ssl_fingerprint_ja4,
         0, 0, 0
     },
 
-    {   ngx_string("stream_ssl_ja4_ro"),
+    {   ngx_string("ssl_fingerprint_ja4_ro"),
         NULL,
-        ngx_stream_ssl_ja4_ro_fingerprint,
+        ngx_stream_ssl_fingerprint_ja4_ro,
         0, 0, 0
     },
 
-    {   ngx_string("stream_ssl_ja4_o"),
+    {   ngx_string("ssl_fingerprint_ja4_o"),
         NULL,
-        ngx_stream_ssl_ja4_o_fingerprint,
+        ngx_stream_ssl_fingerprint_ja4_o,
         0, 0, 0
     },
 

@@ -3,26 +3,26 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
-#include <nginx_ssl_fingerprint.h>
+#include <ngx_ssl_fingerprint.h>
 
 extern int ngx_ssl_is_setting_client_hello_ja4_callback;
 
 static ngx_int_t ngx_http_ssl_fingerprint_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_ssl_greased(ngx_http_request_t *r,
                             ngx_http_variable_value_t *v, uintptr_t data);
-static ngx_int_t ngx_http_ssl_fingerprint(ngx_http_request_t *r,
+static ngx_int_t ngx_http_ssl_fingerprint_ja3(ngx_http_request_t *r,
                             ngx_http_variable_value_t *v, uintptr_t data);
-static ngx_int_t ngx_http_ssl_fingerprint_hash(ngx_http_request_t *r,
+static ngx_int_t ngx_http_ssl_fingerprint_ja3_hash(ngx_http_request_t *r,
                              ngx_http_variable_value_t *v, uintptr_t data);
 static ngx_int_t ngx_http_http2_fingerprint(ngx_http_request_t *r,
                             ngx_http_variable_value_t *v, uintptr_t data);
-static ngx_int_t ngx_http_ssl_ja4_r_fingerprint(ngx_http_request_t *r,
+static ngx_int_t ngx_http_ssl_fingerprint_ja4_r(ngx_http_request_t *r,
                             ngx_http_variable_value_t *v, uintptr_t data);
-static ngx_int_t ngx_http_ssl_ja4_fingerprint(ngx_http_request_t *r,
+static ngx_int_t ngx_http_ssl_fingerprint_ja4(ngx_http_request_t *r,
                             ngx_http_variable_value_t *v, uintptr_t data);
-static ngx_int_t ngx_http_ssl_ja4_ro_fingerprint(ngx_http_request_t *r,
+static ngx_int_t ngx_http_ssl_fingerprint_ja4_ro(ngx_http_request_t *r,
                             ngx_http_variable_value_t *v, uintptr_t data);
-static ngx_int_t ngx_http_ssl_ja4_o_fingerprint(ngx_http_request_t *r,
+static ngx_int_t ngx_http_ssl_fingerprint_ja4_o(ngx_http_request_t *r,
                             ngx_http_variable_value_t *v, uintptr_t data);
 
 static ngx_http_module_t ngx_http_ssl_fingerprint_module_ctx = {
@@ -51,21 +51,21 @@ ngx_module_t ngx_http_ssl_fingerprint_module = {
     NGX_MODULE_V1_PADDING};
 
 static ngx_http_variable_t ngx_http_ssl_fingerprint_variables_list[] = {
-    {ngx_string("http_ssl_greased"), NULL, ngx_http_ssl_greased,
+    {ngx_string("ssl_greased"), NULL, ngx_http_ssl_greased,
      0, NGX_HTTP_VAR_NOCACHEABLE, 0},
-    {ngx_string("http_ssl_ja3"), NULL, ngx_http_ssl_fingerprint,
+    {ngx_string("ssl_fingerprint_ja3"), NULL, ngx_http_ssl_fingerprint_ja3,
      0, NGX_HTTP_VAR_NOCACHEABLE, 0},
-    {ngx_string("http_ssl_ja3_hash"), NULL, ngx_http_ssl_fingerprint_hash,
+    {ngx_string("ssl_fingerprint_ja3_hash"), NULL, ngx_http_ssl_fingerprint_ja3_hash,
      0, NGX_HTTP_VAR_NOCACHEABLE, 0},
     {ngx_string("http2_fingerprint"), NULL, ngx_http_http2_fingerprint,
      0, NGX_HTTP_VAR_NOCACHEABLE, 0},
-    {ngx_string("http_ssl_ja4_r"), NULL, ngx_http_ssl_ja4_r_fingerprint,
+    {ngx_string("ssl_fingerprint_ja4_r"), NULL, ngx_http_ssl_fingerprint_ja4_r,
      0, NGX_HTTP_VAR_NOCACHEABLE, 0},
-    {ngx_string("http_ssl_ja4"), NULL, ngx_http_ssl_ja4_fingerprint,
+    {ngx_string("ssl_fingerprint_ja4"), NULL, ngx_http_ssl_fingerprint_ja4,
      0, NGX_HTTP_VAR_NOCACHEABLE, 0},
-    {ngx_string("http_ssl_ja4_ro"), NULL, ngx_http_ssl_ja4_ro_fingerprint,
+    {ngx_string("ssl_fingerprint_ja4_ro"), NULL, ngx_http_ssl_fingerprint_ja4_ro,
      0, NGX_HTTP_VAR_NOCACHEABLE, 0},
-    {ngx_string("http_ssl_ja4_o"), NULL, ngx_http_ssl_ja4_o_fingerprint,
+    {ngx_string("ssl_fingerprint_ja4_o"), NULL, ngx_http_ssl_fingerprint_ja4_o,
      0, NGX_HTTP_VAR_NOCACHEABLE, 0},
     ngx_http_null_variable
 };
@@ -82,7 +82,7 @@ ngx_http_ssl_greased(ngx_http_request_t *r,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja3(r->connection) != NGX_OK) {
+    if (ngx_ssl_fingerprint_ja3(r->connection) != NGX_OK) {
         return NGX_ERROR;
     }
 
@@ -94,7 +94,7 @@ ngx_http_ssl_greased(ngx_http_request_t *r,
 }
 
 static ngx_int_t
-ngx_http_ssl_fingerprint(ngx_http_request_t *r,
+ngx_http_ssl_fingerprint_ja3(ngx_http_request_t *r,
                  ngx_http_variable_value_t *v, uintptr_t data)
 {
     /* For access.log's map $VAR {}:
@@ -105,7 +105,7 @@ ngx_http_ssl_fingerprint(ngx_http_request_t *r,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja3(r->connection) != NGX_OK) {
+    if (ngx_ssl_fingerprint_ja3(r->connection) != NGX_OK) {
         return NGX_ERROR;
     }
 
@@ -117,7 +117,7 @@ ngx_http_ssl_fingerprint(ngx_http_request_t *r,
 }
 
 static ngx_int_t
-ngx_http_ssl_fingerprint_hash(ngx_http_request_t *r,
+ngx_http_ssl_fingerprint_ja3_hash(ngx_http_request_t *r,
                  ngx_http_variable_value_t *v, uintptr_t data)
 {
     /* For access.log's map $VAR {}:
@@ -128,7 +128,7 @@ ngx_http_ssl_fingerprint_hash(ngx_http_request_t *r,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja3_hash(r->connection) != NGX_OK) {
+    if (ngx_ssl_fingerprint_ja3_hash(r->connection) != NGX_OK) {
         return NGX_OK;
     }
 
@@ -165,7 +165,7 @@ ngx_http_http2_fingerprint(ngx_http_request_t *r,
 }
 
 static ngx_int_t
-ngx_http_ssl_ja4_r_fingerprint(ngx_http_request_t *r,
+ngx_http_ssl_fingerprint_ja4_r(ngx_http_request_t *r,
                  ngx_http_variable_value_t *v, uintptr_t data)
 {
     /* For access.log's map $VAR {}:
@@ -176,7 +176,7 @@ ngx_http_ssl_ja4_r_fingerprint(ngx_http_request_t *r,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja4_r(r->connection) != NGX_OK) {
+    if (ngx_ssl_fingerprint_ja4_r(r->connection) != NGX_OK) {
         return NGX_ERROR;
     }
 
@@ -188,7 +188,7 @@ ngx_http_ssl_ja4_r_fingerprint(ngx_http_request_t *r,
 }
 
 static ngx_int_t
-ngx_http_ssl_ja4_fingerprint(ngx_http_request_t *r,
+ngx_http_ssl_fingerprint_ja4(ngx_http_request_t *r,
                  ngx_http_variable_value_t *v, uintptr_t data)
 {
     /* For access.log's map $VAR {}:
@@ -199,7 +199,7 @@ ngx_http_ssl_ja4_fingerprint(ngx_http_request_t *r,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja4(r->connection) != NGX_OK) {
+    if (ngx_ssl_fingerprint_ja4(r->connection) != NGX_OK) {
         return NGX_OK;
     }
 
@@ -211,7 +211,7 @@ ngx_http_ssl_ja4_fingerprint(ngx_http_request_t *r,
 }
 
 static ngx_int_t
-ngx_http_ssl_ja4_ro_fingerprint(ngx_http_request_t *r,
+ngx_http_ssl_fingerprint_ja4_ro(ngx_http_request_t *r,
                  ngx_http_variable_value_t *v, uintptr_t data)
 {
     /* For access.log's map $VAR {}:
@@ -222,7 +222,7 @@ ngx_http_ssl_ja4_ro_fingerprint(ngx_http_request_t *r,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja4_ro(r->connection) != NGX_OK) {
+    if (ngx_ssl_fingerprint_ja4_ro(r->connection) != NGX_OK) {
         return NGX_ERROR;
     }
 
@@ -234,7 +234,7 @@ ngx_http_ssl_ja4_ro_fingerprint(ngx_http_request_t *r,
 }
 
 static ngx_int_t
-ngx_http_ssl_ja4_o_fingerprint(ngx_http_request_t *r,
+ngx_http_ssl_fingerprint_ja4_o(ngx_http_request_t *r,
                  ngx_http_variable_value_t *v, uintptr_t data)
 {
     /* For access.log's map $VAR {}:
@@ -245,7 +245,7 @@ ngx_http_ssl_ja4_o_fingerprint(ngx_http_request_t *r,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja4_o(r->connection) != NGX_OK) {
+    if (ngx_ssl_fingerprint_ja4_o(r->connection) != NGX_OK) {
         return NGX_OK;
     }
 
@@ -267,7 +267,7 @@ ngx_http_ssl_fingerprint_init(ngx_conf_t *cf)
         if (var == NULL) {
             return NGX_ERROR;
         }
-        /** NOTE: update it, if set_handler will be needed */
+        /* update it if set_handler will be needed */
         var->get_handler = v->get_handler;
         var->data = v->data;
     }

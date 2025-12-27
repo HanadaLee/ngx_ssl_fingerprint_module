@@ -5,7 +5,7 @@
 #include <ngx_http_v2.h>
 #include <ngx_md5.h>
 
-#include <nginx_ssl_fingerprint.h>
+#include <ngx_ssl_fingerprint.h>
 
 #define IS_GREASE_CODE(code) (((code)&0x0f0f) == 0x0a0a && ((code)&0xff) == ((code)>>8))
 
@@ -201,7 +201,7 @@ unsigned char *append_uint32(unsigned char* dst, uint32_t n)
  *      NGX_OK - c->ssl->fp_ja3_str is already set
  *      NGX_ERROR - something went wrong
  */
-int ngx_ssl_ja3(ngx_connection_t *c)
+int ngx_ssl_fingerprint_ja3(ngx_connection_t *c)
 {
     u_char *ptr = NULL, *data = NULL;
     size_t num = 0, i;
@@ -217,7 +217,7 @@ int ngx_ssl_ja3(ngx_connection_t *c)
          *  this would help to debug this case, if it happened.
          */
         ngx_log_error(NGX_LOG_WARN, c->log, 0,
-                "ngx_ssl_ja3: fp_ja_data == NULL");
+                "ngx_ssl_fingerprint_ja3: fp_ja_data == NULL");
         return NGX_ERROR;
     }
 
@@ -233,7 +233,7 @@ int ngx_ssl_ja3(ngx_connection_t *c)
         return NGX_ERROR;
     }
 
-    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_ja3: alloc bytes: [%d]\n", c->ssl->fp_ja3_str.len);
+    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint_ja3: alloc bytes: [%d]\n", c->ssl->fp_ja3_str.len);
 
     /* version */
     ptr = c->ssl->fp_ja3_str.data;
@@ -308,7 +308,7 @@ int ngx_ssl_ja3(ngx_connection_t *c)
     /* greased */
     c->ssl->fp_tls_greased = greased;
 
-    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_ja3: ja3 str=[%V], len=[%d]", &c->ssl->fp_ja3_str, c->ssl->fp_ja3_str.len);
+    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint_ja3: ja3 str=[%V], len=[%d]", &c->ssl->fp_ja3_str, c->ssl->fp_ja3_str.len);
 
     return NGX_OK;
 }
@@ -321,7 +321,7 @@ int ngx_ssl_ja3(ngx_connection_t *c)
  *      NGX_OK - c->ssl->fp_ja3_hash is alread set
  *      NGX_ERROR - something went wrong
  */
-int ngx_ssl_ja3_hash(ngx_connection_t *c)
+int ngx_ssl_fingerprint_ja3_hash(ngx_connection_t *c)
 {
     ngx_md5_t ctx;
     u_char hash_buf[16];
@@ -330,7 +330,7 @@ int ngx_ssl_ja3_hash(ngx_connection_t *c)
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja3(c) != NGX_OK) {
+    if (ngx_ssl_fingerprint_ja3(c) != NGX_OK) {
         return NGX_ERROR;
     }
 
@@ -342,7 +342,7 @@ int ngx_ssl_ja3_hash(ngx_connection_t *c)
         return NGX_ERROR;
     }
 
-    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_ja3_hash: alloc bytes: [%d]\n", c->ssl->fp_ja3_hash.len);
+    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint_ja3_hash: alloc bytes: [%d]\n", c->ssl->fp_ja3_hash.len);
 
     ngx_md5_init(&ctx);
     ngx_md5_update(&ctx, c->ssl->fp_ja3_str.data, c->ssl->fp_ja3_str.len);
@@ -504,7 +504,7 @@ ja4_clean_ciphers(ngx_connection_t *c, const uint16_t *data, size_t len,
 
     values = ngx_pnalloc(c->pool, n * sizeof(uint16_t));
     if (values == NULL) {
-        ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_ja4_r "
+        ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_fingerprint_ja4_r "
                 "out of memory for cleaned ciphers");
         return NULL;
     }
@@ -557,7 +557,7 @@ ja4_clean_extensions(ngx_connection_t *c, const uint16_t *data, size_t len,
 
     values = ngx_pnalloc(c->pool, num_cleaned_exts * sizeof(uint16_t));
     if (values == NULL) {
-        ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_ja4_r "
+        ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_fingerprint_ja4_r "
                 "out of memory for cleaned extensions");
         return NULL;
     }
@@ -620,7 +620,7 @@ append_hex_uint16_from_bytes(u_char *dst, const u_char *src,
 
 
 static int
-ngx_ssl_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dest_field, int original)
+ngx_ssl_fingerprint_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dest_field, int original)
 {
     const u_char    *data, *first_alpn = NULL, *sig_algos = NULL;
     u_char          *ptr = NULL, sni;
@@ -640,7 +640,7 @@ ngx_ssl_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dest_field, int original)
          *  this would help to debug this case, if it happened.
          */
         ngx_log_error(NGX_LOG_WARN, c->log, 0,
-                "ngx_ssl_ja4: fp_ja4_data == NULL");
+                "ngx_ssl_fingerprint_ja4: fp_ja4_data == NULL");
         return NGX_ERROR;
     }
 
@@ -680,7 +680,7 @@ ngx_ssl_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dest_field, int original)
         sig_algos_data_len = (*data << 8) | *(data + 1); /* big endian */
         if (sig_algos_len != sig_algos_data_len + sizeof(uint16_t)) {
             ngx_log_error(NGX_LOG_WARN, c->log, 0,
-                          "ngx_ssl_ja4_r_helper "
+                          "ngx_ssl_fingerprint_ja4_r_helper "
                           "sig_algos_len mismatch, outer_len=%d, "
 			  "inner_len=%d, diff must be 2",
                           sig_algos_len, sig_algos_data_len);
@@ -696,7 +696,7 @@ ngx_ssl_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dest_field, int original)
 
     if (data != c->ssl->fp_ja4_data.data + c->ssl->fp_ja4_data.len) {
         ngx_log_error(NGX_LOG_WARN, c->log, 0,
-                      "ngx_ssl_ja4_r_helper "
+                      "ngx_ssl_fingerprint_ja4_r_helper "
                       "end mismatch, got=%p, want=%p, original=%d",
                       data, c->ssl->fp_ja4_data.data + c->ssl->fp_ja4_data.len,
 		      original);
@@ -772,7 +772,7 @@ ngx_ssl_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dest_field, int original)
 
 
 static int
-ngx_ssl_ja4_helper(ngx_connection_t *c, ngx_str_t *raw_field,
+ngx_ssl_fingerprint_ja4_helper(ngx_connection_t *c, ngx_str_t *raw_field,
 		   ngx_str_t *dest_field, int original)
 {
     u_char         hash_buf[EVP_MAX_MD_SIZE], *ptr, *src, *part_end;
@@ -785,7 +785,7 @@ ngx_ssl_ja4_helper(ngx_connection_t *c, ngx_str_t *raw_field,
         return NGX_OK;
     }
 
-    if (ngx_ssl_ja4_r_helper(c, raw_field, original) != NGX_OK) {
+    if (ngx_ssl_fingerprint_ja4_r_helper(c, raw_field, original) != NGX_OK) {
         return NGX_ERROR;
     }
 
@@ -798,7 +798,7 @@ ngx_ssl_ja4_helper(ngx_connection_t *c, ngx_str_t *raw_field,
     }
 
     ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0,
-                  "ngx_ssl_ja4_hash: alloc bytes: [%d]\n",
+                  "ngx_ssl_fingerprint_ja4_hash: alloc bytes: [%d]\n",
                   dest_field->len);
 
     /* JA4_a part */
@@ -820,7 +820,7 @@ ngx_ssl_ja4_helper(ngx_connection_t *c, ngx_str_t *raw_field,
          && EVP_DigestFinal_ex(ctx, hash_buf, &hash_len)) != 1)
     {
         ngx_log_error(NGX_LOG_ERR, c->log, 0,
-                      "ngx_ssl_ja4_helper "
+                      "ngx_ssl_fingerprint_ja4_helper "
                       "failed to digest JA4_b");
         goto failed;
     }
@@ -840,7 +840,7 @@ ngx_ssl_ja4_helper(ngx_connection_t *c, ngx_str_t *raw_field,
              && EVP_DigestFinal_ex(ctx, hash_buf, &hash_len)) != 1)
         {
             ngx_log_error(NGX_LOG_ERR, c->log, 0,
-                          "ngx_ssl_ja4_helper "
+                          "ngx_ssl_fingerprint_ja4_helper "
                           "failed to digest JA4_c");
             goto failed;
         }
@@ -863,9 +863,9 @@ failed:
  *      NGX_ERROR - something went wrong
  */
 int
-ngx_ssl_ja4_r(ngx_connection_t *c)
+ngx_ssl_fingerprint_ja4_r(ngx_connection_t *c)
 {
-    return ngx_ssl_ja4_r_helper(c, &c->ssl->fp_ja4_r, 0);
+    return ngx_ssl_fingerprint_ja4_r_helper(c, &c->ssl->fp_ja4_r, 0);
 }
 
 
@@ -877,9 +877,9 @@ ngx_ssl_ja4_r(ngx_connection_t *c)
  *      NGX_OK - c->ssl->fp_ja4 is alread set
  *      NGX_ERROR - something went wrong
  */
-int ngx_ssl_ja4(ngx_connection_t *c)
+int ngx_ssl_fingerprint_ja4(ngx_connection_t *c)
 {
-    return ngx_ssl_ja4_helper(c, &c->ssl->fp_ja4_r, &c->ssl->fp_ja4, 0);
+    return ngx_ssl_fingerprint_ja4_helper(c, &c->ssl->fp_ja4_r, &c->ssl->fp_ja4, 0);
 }
 
 
@@ -892,9 +892,9 @@ int ngx_ssl_ja4(ngx_connection_t *c)
  *      NGX_ERROR - something went wrong
  */
 int
-ngx_ssl_ja4_ro(ngx_connection_t *c)
+ngx_ssl_fingerprint_ja4_ro(ngx_connection_t *c)
 {
-    return ngx_ssl_ja4_r_helper(c, &c->ssl->fp_ja4_ro, 1);
+    return ngx_ssl_fingerprint_ja4_r_helper(c, &c->ssl->fp_ja4_ro, 1);
 }
 
 
@@ -906,7 +906,7 @@ ngx_ssl_ja4_ro(ngx_connection_t *c)
  *      NGX_OK - c->ssl->fp_ja4_o is alread set
  *      NGX_ERROR - something went wrong
  */
-int ngx_ssl_ja4_o(ngx_connection_t *c)
+int ngx_ssl_fingerprint_ja4_o(ngx_connection_t *c)
 {
-    return ngx_ssl_ja4_helper(c, &c->ssl->fp_ja4_ro, &c->ssl->fp_ja4_o, 1);
+    return ngx_ssl_fingerprint_ja4_helper(c, &c->ssl->fp_ja4_ro, &c->ssl->fp_ja4_o, 1);
 }
