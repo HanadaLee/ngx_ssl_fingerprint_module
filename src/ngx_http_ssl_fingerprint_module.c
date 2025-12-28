@@ -184,6 +184,12 @@ ngx_http_ssl_fingerprint_ja4_r(ngx_http_request_t *r,
     v->len = r->connection->ssl->fp_ja4_r.len;
     v->not_found = 0;
 
+#if (NGX_QUIC)
+    if (r->connection->quic && v->len > 0) {
+        v->data[0] = 'q';
+    }
+#endif
+
     return NGX_OK;
 }
 
@@ -206,6 +212,12 @@ ngx_http_ssl_fingerprint_ja4(ngx_http_request_t *r,
     v->data = r->connection->ssl->fp_ja4.data;
     v->len = r->connection->ssl->fp_ja4.len;
     v->not_found = 0;
+
+#if (NGX_QUIC)
+    if (r->connection->quic && v->len > 0) {
+        v->data[0] = 'q';
+    }
+#endif
 
     return NGX_OK;
 }
@@ -230,6 +242,12 @@ ngx_http_ssl_fingerprint_ja4_ro(ngx_http_request_t *r,
     v->len = r->connection->ssl->fp_ja4_ro.len;
     v->not_found = 0;
 
+#if (NGX_QUIC)
+    if (r->connection->quic && v->len > 0) {
+        v->data[0] = 'q';
+    }
+#endif
+
     return NGX_OK;
 }
 
@@ -252,6 +270,12 @@ ngx_http_ssl_fingerprint_ja4_o(ngx_http_request_t *r,
     v->data = r->connection->ssl->fp_ja4_o.data;
     v->len = r->connection->ssl->fp_ja4_o.len;
     v->not_found = 0;
+
+#if (NGX_QUIC)
+    if (r->connection->quic && v->len > 0) {
+        v->data[0] = 'q';
+    }
+#endif
 
     return NGX_OK;
 }
