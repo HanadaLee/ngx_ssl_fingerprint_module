@@ -68,7 +68,7 @@ index 5175d7a7e..66029ffa0 100644
 +int
 +ngx_ssl_client_hello_ja4_cb(SSL *s, int *al, void *arg)
 +{
-+    ngx_connection_t  *c = arg;
++    ngx_connection_t  *c;
 +    ngx_str_t         *ja;
 +    size_t             ciphers_len = 0, groups_len = 0, formats_len = 0,
 +                       num_exts = 0, versions_len = 0, alpn_len = 0,
@@ -77,15 +77,15 @@ index 5175d7a7e..66029ffa0 100644
 +    const u_char      *ciphers = NULL, *groups = NULL, *formats = NULL,
 +                      *versions = NULL, *alpn = NULL, *sig_algos = NULL;
 +    u_char            *ptr;
-+    uint16_t           legacy_version, *exts = NULL, exts_len = 0;
++    uint16_t           legacy_version;
++    uint16_t          *exts = NULL, exts_len = 0;
 +
-+    if (c == NULL) {
++    c = ngx_ssl_get_connection(s);
++
++    if (c == NULL || c->ssl == NULL) {
 +        return SSL_CLIENT_HELLO_SUCCESS;
 +    }
 +
-+    if (c->ssl == NULL) {
-+        return SSL_CLIENT_HELLO_SUCCESS;
-+    }
 +
 +    /* get received extensions */
 +    SSL_client_hello_get0_received_ext(s, NULL, &num_exts);
@@ -300,7 +300,7 @@ index 5175d7a7e..66029ffa0 100644
  
 +    if (ngx_ssl_is_setting_client_hello_ja4_callback) {
 +        (void) SSL_CTX_set_client_hello_cb(c->ssl->session_ctx,
-+                                           ngx_ssl_client_hello_ja4_cb, c);
++                                           ngx_ssl_client_hello_ja4_cb, NULL);
 +    }
 +
      n = SSL_do_handshake(c->ssl->connection);
