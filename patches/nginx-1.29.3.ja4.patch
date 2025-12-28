@@ -204,8 +204,8 @@ index 5175d7a7e..66029ffa0 100644
 +                             &alpn, &alpn_len);
 +
 +    /* protocol */
-+#if OPENSSL_VERSION_NUMBER >= 0x30200000L
-+    *ptr++ = (u_char) (SSL_is_quic(s)
++#if (NGX_QUIC)
++    *ptr++ = (u_char) (c->quic
 +                       ? 'q'
 +                       : SSL_is_dtls(s) ? 'd' : 't');
 +#else
