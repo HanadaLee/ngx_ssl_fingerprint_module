@@ -233,7 +233,7 @@ int ngx_ssl_fingerprint_ja3(ngx_connection_t *c)
         return NGX_ERROR;
     }
 
-    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint_ja3: alloc bytes: [%d]\n", c->ssl->fp_ja3_str.len);
+    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint: ja3 alloc bytes: [%d]\n", c->ssl->fp_ja3_str.len);
 
     /* version */
     ptr = c->ssl->fp_ja3_str.data;
@@ -308,7 +308,7 @@ int ngx_ssl_fingerprint_ja3(ngx_connection_t *c)
     /* greased */
     c->ssl->fp_tls_greased = greased;
 
-    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint_ja3: ja3 str=[%V], len=[%d]", &c->ssl->fp_ja3_str, c->ssl->fp_ja3_str.len);
+    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint: ja3 str=[%V], len=[%d]", &c->ssl->fp_ja3_str, c->ssl->fp_ja3_str.len);
 
     return NGX_OK;
 }
@@ -342,7 +342,7 @@ int ngx_ssl_fingerprint_ja3_hash(ngx_connection_t *c)
         return NGX_ERROR;
     }
 
-    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint_ja3_hash: alloc bytes: [%d]\n", c->ssl->fp_ja3_hash.len);
+    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint: ja3_hash alloc bytes: [%d]\n", c->ssl->fp_ja3_hash.len);
 
     ngx_md5_init(&ctx);
     ngx_md5_update(&ctx, c->ssl->fp_ja3_str.data, c->ssl->fp_ja3_str.len);
@@ -798,7 +798,7 @@ ngx_ssl_fingerprint_ja4_helper(ngx_connection_t *c, ngx_str_t *raw_field,
     }
 
     ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0,
-                  "ngx_ssl_fingerprint_ja4_hash: alloc bytes: [%d]\n",
+                  "ngx_ssl_fingerprint: ja4_hash alloc bytes: [%d]\n",
                   dest_field->len);
 
     /* JA4_a part */
