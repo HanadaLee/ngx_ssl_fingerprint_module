@@ -216,8 +216,8 @@ int ngx_ssl_fingerprint_ja3(ngx_connection_t *c)
          *  Typical production configuration has log level set to error,
          *  this would help to debug this case, if it happened.
          */
-        ngx_log_error(NGX_LOG_WARN, c->log, 0,
-                "ngx_ssl_fingerprint_ja3: fp_ja_data == NULL");
+        ngx_log_error(NGX_LOG_INFO, c->log, 0,
+                "ngx_ssl_fingerprint: ja3 fp_ja_data is null");
         return NGX_ERROR;
     }
 
@@ -504,7 +504,7 @@ ja4_clean_ciphers(ngx_connection_t *c, const uint16_t *data, size_t len,
 
     values = ngx_pnalloc(c->pool, n * sizeof(uint16_t));
     if (values == NULL) {
-        ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_fingerprint_ja4_r "
+        ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_fingerprint: ja4_r "
                 "out of memory for cleaned ciphers");
         return NULL;
     }
@@ -557,7 +557,7 @@ ja4_clean_extensions(ngx_connection_t *c, const uint16_t *data, size_t len,
 
     values = ngx_pnalloc(c->pool, num_cleaned_exts * sizeof(uint16_t));
     if (values == NULL) {
-        ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_fingerprint_ja4_r "
+        ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_fingerprint: ja4_r "
                 "out of memory for cleaned extensions");
         return NULL;
     }
@@ -639,8 +639,8 @@ ngx_ssl_fingerprint_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dest_field, int
          *  Typical production configuration has log level set to error,
          *  this would help to debug this case, if it happened.
          */
-        ngx_log_error(NGX_LOG_WARN, c->log, 0,
-                "ngx_ssl_fingerprint_ja4: fp_ja4_data == NULL");
+        ngx_log_error(NGX_LOG_INFO, c->log, 0,
+                "ngx_ssl_fingerprint: fp_ja4_data is null");
         return NGX_ERROR;
     }
 
@@ -680,9 +680,9 @@ ngx_ssl_fingerprint_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dest_field, int
         sig_algos_data_len = (*data << 8) | *(data + 1); /* big endian */
         if (sig_algos_len != sig_algos_data_len + sizeof(uint16_t)) {
             ngx_log_error(NGX_LOG_WARN, c->log, 0,
-                          "ngx_ssl_fingerprint_ja4_r_helper "
+                          "ngx_ssl_fingerprint: ja4_r_helper "
                           "sig_algos_len mismatch, outer_len=%d, "
-			  "inner_len=%d, diff must be 2",
+			              "inner_len=%d, diff must be 2",
                           sig_algos_len, sig_algos_data_len);
             dest_field->len = 0;
             return NGX_ERROR;
@@ -696,7 +696,7 @@ ngx_ssl_fingerprint_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dest_field, int
 
     if (data != c->ssl->fp_ja4_data.data + c->ssl->fp_ja4_data.len) {
         ngx_log_error(NGX_LOG_WARN, c->log, 0,
-                      "ngx_ssl_fingerprint_ja4_r_helper "
+                      "ngx_ssl_fingerprint: ja4_r_helper "
                       "end mismatch, got=%p, want=%p, original=%d",
                       data, c->ssl->fp_ja4_data.data + c->ssl->fp_ja4_data.len,
 		      original);
@@ -820,7 +820,7 @@ ngx_ssl_fingerprint_ja4_helper(ngx_connection_t *c, ngx_str_t *raw_field,
          && EVP_DigestFinal_ex(ctx, hash_buf, &hash_len)) != 1)
     {
         ngx_log_error(NGX_LOG_ERR, c->log, 0,
-                      "ngx_ssl_fingerprint_ja4_helper "
+                      "ngx_ssl_fingerprint: ja4_helper "
                       "failed to digest JA4_b");
         goto failed;
     }
@@ -840,7 +840,7 @@ ngx_ssl_fingerprint_ja4_helper(ngx_connection_t *c, ngx_str_t *raw_field,
              && EVP_DigestFinal_ex(ctx, hash_buf, &hash_len)) != 1)
         {
             ngx_log_error(NGX_LOG_ERR, c->log, 0,
-                          "ngx_ssl_fingerprint_ja4_helper "
+                          "ngx_ssl_fingerprint: ja4_helper "
                           "failed to digest JA4_c");
             goto failed;
         }
