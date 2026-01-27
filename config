@@ -4,12 +4,12 @@
 #
 
 ngx_http_addon_name=ngx_http_ssl_fingerprint_module
-ngx_stream_addon_name=ngx_stream_ssl_fingerprint_preread_module
+ngx_stream_addon_name=ngx_stream_ssl_fingerprint_module
 
 SSL_FINGERPRINT_DEPS="$ngx_addon_dir/src/ngx_ssl_fingerprint.h"
 COMMON_SSL_FINGERPRINT_SRCS="$ngx_addon_dir/src/ngx_ssl_fingerprint.c"
 HTTP_SSL_FINGERPRINT_SRCS="$ngx_addon_dir/src/ngx_http_ssl_fingerprint_module.c"
-STREAM_SSL_FINGERPRINT_SRCS="$ngx_addon_dir/src/ngx_stream_ssl_fingerprint_preread_module.c"
+STREAM_SSL_FINGERPRINT_SRCS="$ngx_addon_dir/src/ngx_stream_ssl_fingerprint_module.c"
 
 if [ -n "$ngx_module_link" ]; then
   ngx_module_incs="$ngx_addon_dir/src"

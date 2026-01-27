@@ -23,9 +23,9 @@ index 5175d7a..b4e869f 100644
  
  
 +static u_char *
-+ngx_ssl_fingerprint_append_uint16(u_char *dest, uint16_t val)
++ngx_ssl_fingerprint_append_uint16(u_char *dst, uint16_t val)
 +{
-+    return ngx_copy(dest, &val, sizeof(uint16_t));
++    return ngx_copy(dst, &val, sizeof(uint16_t));
 +}
 +
 +

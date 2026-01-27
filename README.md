@@ -69,7 +69,7 @@ $ patch -p1 < ngx_ssl_fingerprint_module/patches/nginx-1.29.3.ja4.patch
 
 # Build
 
-$ ASAN_OPTIONS=symbolize=1 ./auto/configure --with-openssl=./openssl --with-openssl-opt="no-apps no-legacy no-idea no-mdc2 no-rc5 no-zlib no-ssl3 no-tests no-ssl3-method enable-rfc3779 enable-cms no-capieng no-rdrand" --add-module=./ngx_ssl_fingerprint_module --with-stream_ssl_module --with-debug --with-stream --with-http_v2_module --with-cc-opt="-fsanitize=address -O -fno-omit-frame-pointer" --with-ld-opt="-L/usr/local/lib -Wl,-E -lasan"
+$ ASAN_OPTIONS=symbolize=1 ./auto/configure --with-openssl=./openssl --with-openssl-opt="no-apps no-legacy no-idea no-mdc2 no-rc5 no-zlib no-ssl3 no-tests no-ssl3-method enable-rfc3779 enable-cms no-capieng no-rdrand" --with-stream_ssl_module --add-module=./ngx_ssl_fingerprint_module --with-debug --with-stream --with-http_v2_module --with-cc-opt="-fsanitize=address -O -fno-omit-frame-pointer" --with-ld-opt="-L/usr/local/lib -Wl,-E -lasan"
 $ make -j
 
 # Test
