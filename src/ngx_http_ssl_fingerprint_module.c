@@ -65,7 +65,7 @@ static ngx_http_variable_t  ngx_http_ssl_fingerprint_vars[] = {
       ngx_http_ssl_fingerprint_ja3,
       0, NGX_HTTP_VAR_NOCACHEABLE, 0 },
 
-    { gx_string("ssl_fingerprint_ja3_hash"), NULL,
+    { ngx_string("ssl_fingerprint_ja3_hash"), NULL,
       ngx_http_ssl_fingerprint_ja3_hash,
       0, NGX_HTTP_VAR_NOCACHEABLE, 0 },
 
