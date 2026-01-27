@@ -15,7 +15,6 @@ extern int ngx_ssl_fingerprint_ja4_r(ngx_connection_t *c);
 extern int ngx_ssl_fingerprint_ja4(ngx_connection_t *c);
 extern int ngx_ssl_fingerprint_ja4_ro(ngx_connection_t *c);
 extern int ngx_ssl_fingerprint_ja4_o(ngx_connection_t *c);
-extern int ngx_ssl_is_setting_client_hello_ja4_callback;
 
 static ngx_int_t ngx_stream_ssl_fingerprint_preread_init(ngx_conf_t *cf);
 
@@ -306,8 +305,6 @@ ngx_stream_ssl_fingerprint_preread_init(ngx_conf_t *cf)
         }
         *v = ngx_stream_ssl_ja3_variables_list[l];
     }
-
-    ngx_ssl_is_setting_client_hello_ja4_callback = 1;
 
     return NGX_OK;
 }

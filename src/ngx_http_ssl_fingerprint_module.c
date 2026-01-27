@@ -2,10 +2,8 @@
 #include <ngx_config.h>
 #include <ngx_core.h>
 #include <ngx_http.h>
-
 #include <ngx_ssl_fingerprint.h>
 
-extern int ngx_ssl_is_setting_client_hello_ja4_callback;
 
 static ngx_int_t ngx_http_ssl_fingerprint_init(ngx_conf_t *cf);
 static ngx_int_t ngx_http_ssl_greased(ngx_http_request_t *r,
@@ -295,8 +293,6 @@ ngx_http_ssl_fingerprint_init(ngx_conf_t *cf)
         var->get_handler = v->get_handler;
         var->data = v->data;
     }
-
-    ngx_ssl_is_setting_client_hello_ja4_callback = 1;
 
     return NGX_OK;
 }
