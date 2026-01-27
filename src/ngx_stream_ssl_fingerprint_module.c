@@ -73,7 +73,7 @@ static ngx_stream_variable_t  ngx_stream_ssl_fingerprint_vars[] = {
       ngx_stream_ssl_fingerprint_ja3,
       0, NGX_STREAM_VAR_NOCACHEABLE, 0 },
 
-    { gx_string("ssl_fingerprint_ja3_hash"), NULL,
+    { ngx_string("ssl_fingerprint_ja3_hash"), NULL,
       ngx_stream_ssl_fingerprint_ja3_hash,
       0, NGX_STREAM_VAR_NOCACHEABLE, 0 },
 
