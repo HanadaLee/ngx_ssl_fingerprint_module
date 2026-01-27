@@ -1,5 +1,5 @@
 diff --git a/src/event/ngx_event_openssl.c b/src/event/ngx_event_openssl.c
-index 5175d7a..669b0a6 100644
+index 5175d7a..b4e869f 100644
 --- a/src/event/ngx_event_openssl.c
 +++ b/src/event/ngx_event_openssl.c
 @@ -17,6 +17,15 @@
@@ -111,7 +111,7 @@ index 5175d7a..669b0a6 100644
 +    p = ngx_ssl_fingerprint_append_uint16(p, exts_len);
 +    exts = (uint16_t *) p;
 +
-+    if (((uintp_t) exts) % 2 != 0) {
++    if (((uintptr_t) exts) % 2 != 0) {
 +        ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_client_hello_cb: "
 +                      "ext destination is not 2-byte aligned");
 +    }
