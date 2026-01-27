@@ -7,12 +7,6 @@
 #include <ngx_ssl_fingerprint.h>
 
 
-#if 0
-#define ngx_ssl_fingerprint_is_grease(code)                                   \
-    (((code) & 0x0f0f) == 0x0a0a && ((code) & 0xff) == ((code) >> 8))         \
-#endif
-
-
 #define NGX_SSL_FINGERPRINT_JA4_A_LEN   10
 #define NGX_SSL_FINGERPRINT_JA4_B_LEN   12
 #define NGX_SSL_FINGERPRINT_JA4_C_LEN   12
