@@ -236,7 +236,7 @@ index 5175d7a..b4e869f 100644
 +        if (!ngx_ssl_fingerprint_is_alnum(first)
 +            || !ngx_ssl_fingerprint_is_alnum(last))
 +        {
-+            *p++ = hex[first >> 4];
++            *p++ = hex[(first >> 4) & 0x0f];
 +            *p++ = hex[last & 0x0f];
 +
 +        } else {
