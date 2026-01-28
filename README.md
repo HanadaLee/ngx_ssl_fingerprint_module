@@ -21,7 +21,6 @@ A high performance nginx module for ja4, ja3, and http2 fingerprint.
 | ssl_greased              | 0             | TLS greased flag.        |
 | ssl_fingerprint_ja3      | NULL          | The ja3 fingerprint.     |
 | ssl_fingerprint_ja3_hash | NULL          | The ja3 fingerprint hash.|
-| http2_fingerprint        | NULL          | The http2 fingerprint. (HTTP Module Only)  |
 | ssl_fingerprint_ja4_r    | NULL          | The ja4 raw fingerprint. |
 | ssl_fingerprint_ja4      | NULL          | The ja4 fingerprint.     |
 | ssl_fingerprint_ja4_ro   | NULL          | The ja4 original raw fingerprint. |
@@ -32,11 +31,11 @@ A high performance nginx module for ja4, ja3, and http2 fingerprint.
 ```nginx
 http {
     server {
-        listen                 127.0.0.1:4433 ssl http2;
+        listen                 127.0.0.1:4433 ssl;
         ssl_certificate        cert.pem;
         ssl_certificate_key    priv.key;
         error_log              /dev/stderr debug;
-        return                 200 "ja4: $ssl_fingerprint_ja4\nja3: $ssl_fingerprint_ja3\nh2fp: $http2_fingerprint";
+        return                 200 "ja4: $ssl_fingerprint_ja4\nja3: $ssl_fingerprint_ja3";
     }
 }
 stream {
