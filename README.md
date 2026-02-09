@@ -58,13 +58,13 @@ stream {
 
 $ git clone -b release-1.29.3 --depth=1 https://github.com/nginx/nginx
 $ cd nginx
-$ git clone -b openssl-3.5.4 --depth=1 https://github.com/openssl/openssl
+$ git clone -b openssl-3.5.5 --depth=1 https://github.com/openssl/openssl
 $ git clone -b ja4_fingerprint https://git.hanada.info/hanada/ngx_ssl_fingerprint_module
 
 # Patch
 
-$ patch -p1 -d openssl < ngx_ssl_fingerprint_module/patches/openssl.openssl-3.5.4.ja4.patch
-$ patch -p1 < ngx_ssl_fingerprint_module/patches/nginx-1.29.3.ja4.patch
+$ patch -p1 -d openssl < ngx_ssl_fingerprint_module/patches/openssl.openssl-3.5.5+.patch
+$ patch -p1 < ngx_ssl_fingerprint_module/patches/nginx-1.29.3+.patch
 
 # Build
 
