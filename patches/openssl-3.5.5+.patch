@@ -1,21 +1,21 @@
 diff --git a/include/openssl/ssl.h.in b/include/openssl/ssl.h.in
-index 383c5bc411..2019884e73 100644
+index bdcc685..cb7abed 100644
 --- a/include/openssl/ssl.h.in
 +++ b/include/openssl/ssl.h.in
-@@ -1922,6 +1922,8 @@ size_t SSL_client_hello_get0_compression_methods(SSL *s,
+@@ -1928,6 +1928,8 @@ size_t SSL_client_hello_get0_compression_methods(SSL *s,
  int SSL_client_hello_get1_extensions_present(SSL *s, int **out, size_t *outlen);
  int SSL_client_hello_get_extension_order(SSL *s, uint16_t *exts,
-                                          size_t *num_exts);
+     size_t *num_exts);
 +int SSL_client_hello_get0_received_ext(SSL *s, uint16_t *exts,
 +                                       size_t *num_exts);
  int SSL_client_hello_get0_ext(SSL *s, unsigned int type,
-                               const unsigned char **out, size_t *outlen);
+     const unsigned char **out, size_t *outlen);
  
 diff --git a/ssl/ssl_lib.c b/ssl/ssl_lib.c
-index 9696a4c55f..b4507e09ff 100644
+index ac77faa..7f93135 100644
 --- a/ssl/ssl_lib.c
 +++ b/ssl/ssl_lib.c
-@@ -6930,6 +6930,41 @@ int SSL_client_hello_get_extension_order(SSL *s, uint16_t *exts, size_t *num_ext
+@@ -6885,6 +6885,41 @@ int SSL_client_hello_get_extension_order(SSL *s, uint16_t *exts, size_t *num_ext
      return 1;
  }
  
@@ -55,5 +55,5 @@ index 9696a4c55f..b4507e09ff 100644
 +}
 +
  int SSL_client_hello_get0_ext(SSL *s, unsigned int type, const unsigned char **out,
-                        size_t *outlen)
+     size_t *outlen)
  {
