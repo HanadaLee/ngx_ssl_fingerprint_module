@@ -1,5 +1,5 @@
 diff --git a/src/event/ngx_event_openssl.c b/src/event/ngx_event_openssl.c
-index 5175d7a..b4e869f 100644
+index 5175d7a..16a3490 100644
 --- a/src/event/ngx_event_openssl.c
 +++ b/src/event/ngx_event_openssl.c
 @@ -17,6 +17,15 @@
@@ -18,7 +18,7 @@ index 5175d7a..b4e869f 100644
  typedef struct {
      ngx_uint_t  engine;   /* unsigned  engine:1; */
  } ngx_openssl_conf_t;
-@@ -2078,6 +2087,256 @@ ngx_ssl_set_session(ngx_connection_t *c, ngx_ssl_session_t *session)
+@@ -2078,6 +2087,259 @@ ngx_ssl_set_session(ngx_connection_t *c, ngx_ssl_session_t *session)
  }
  
  
@@ -93,7 +93,6 @@ index 5175d7a..b4e869f 100644
 +    if (ja->data == NULL) {
 +        ngx_log_error(NGX_LOG_ERR, c->log, 0, "ngx_ssl_client_hello_cb: "
 +                      "out of memory for fp_ja3_data");
-+        ja->len = 0;
 +        goto failed;
 +    }
 +
@@ -121,7 +120,7 @@ index 5175d7a..b4e869f 100644
 +
 +    /* groups */
 +    if (groups_len > 0) {
-+        memcpy(p, groups, groups_len);
++        ngx_memcpy(p, groups, groups_len);
 +        *(uint16_t *) p = (uint16_t) groups_len;
 +        p += groups_len;
 +
@@ -132,7 +131,7 @@ index 5175d7a..b4e869f 100644
 +
 +    /* formats */
 +    if (formats_len > 0) {
-+        memcpy(p, formats, formats_len);
++        ngx_memcpy(p, formats, formats_len);
 +        *(uint8_t *) p = (uint8_t) formats_len;
 +        p += formats_len;
 +
@@ -144,7 +143,7 @@ index 5175d7a..b4e869f 100644
 +    if (p != ja->data + ja->len) {
 +        ngx_log_error(NGX_LOG_ERR, c->log, 0, "ngx_ssl_client_hello_cb: "
 +                      "length mismatch for ja3");
-+        ja->data = NULL;
++        goto failed;
 +    }
 +
 +    /* ja4 */
@@ -174,7 +173,6 @@ index 5175d7a..b4e869f 100644
 +    if (ja->data == NULL) {
 +        ngx_log_error(NGX_LOG_ERR, c->log, 0, "ngx_ssl_client_hello_cb: "
 +                      "out of memory for fp_ja4_data");
-+        ja->len = 0;
 +        goto failed;
 +    }
 +
@@ -226,7 +224,6 @@ index 5175d7a..b4e869f 100644
 +                          "ngx_ssl_client_hello_cb: "
 +                          "invalid first_alpn_len=%d, alpn_len=%d",
 +                          first_alpn_len, alpn_len);
-+            ja->data = NULL;
 +            goto failed;
 +        }
 +
@@ -264,10 +261,16 @@ index 5175d7a..b4e869f 100644
 +    if (p != ja->data + ja->len) {
 +        ngx_log_error(NGX_LOG_ERR, c->log, 0, "ngx_ssl_client_hello_cb: "
 +                      "length mismatch for ja4");
-+        ja->data = NULL;
++        goto failed;
 +    }
 +
 +failed:
++
++    ngx_free(ja->data);
++
++    ja->data = NULL;
++    ja->len = 0;
++
 +    return SSL_CLIENT_HELLO_SUCCESS;
 +}
 +
@@ -275,7 +278,7 @@ index 5175d7a..b4e869f 100644
  ngx_int_t
  ngx_ssl_handshake(ngx_connection_t *c)
  {
-@@ -2097,6 +2356,9 @@ ngx_ssl_handshake(ngx_connection_t *c)
+@@ -2097,6 +2359,9 @@ ngx_ssl_handshake(ngx_connection_t *c)
  
      ngx_ssl_clear_error(c->log);
  
