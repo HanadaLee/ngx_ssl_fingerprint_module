@@ -1,5 +1,5 @@
 diff --git a/src/event/ngx_event_openssl.c b/src/event/ngx_event_openssl.c
-index 5175d7a..e20bf30 100644
+index 5175d7a..0f8b7a3 100644
 --- a/src/event/ngx_event_openssl.c
 +++ b/src/event/ngx_event_openssl.c
 @@ -17,6 +17,15 @@
@@ -18,7 +18,7 @@ index 5175d7a..e20bf30 100644
  typedef struct {
      ngx_uint_t  engine;   /* unsigned  engine:1; */
  } ngx_openssl_conf_t;
-@@ -2078,6 +2087,257 @@ ngx_ssl_set_session(ngx_connection_t *c, ngx_ssl_session_t *session)
+@@ -2078,6 +2087,259 @@ ngx_ssl_set_session(ngx_connection_t *c, ngx_ssl_session_t *session)
  }
  
  
@@ -264,6 +264,8 @@ index 5175d7a..e20bf30 100644
 +        goto failed;
 +    }
 +
++    return SSL_CLIENT_HELLO_SUCCESS;
++
 +failed:
 +
 +    ja->data = NULL;
@@ -276,7 +278,7 @@ index 5175d7a..e20bf30 100644
  ngx_int_t
  ngx_ssl_handshake(ngx_connection_t *c)
  {
-@@ -2097,6 +2357,9 @@ ngx_ssl_handshake(ngx_connection_t *c)
+@@ -2097,6 +2359,9 @@ ngx_ssl_handshake(ngx_connection_t *c)
  
      ngx_ssl_clear_error(c->log);
  
