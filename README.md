@@ -8,11 +8,17 @@ A high performance nginx module for ja4, ja3, and http2 fingerprint.
 
 ### Support Matrix
 
-|              | openssl-3.5.4 |
+|              | openssl-3.5.4+ |
 | -------------| ------------- |
 | nginx-1.29.3 | ✅            |
 
 ## Configuration
+
+### Directives
+
+| Syntax | Default | Context | Description |
+| ------ | ------- | ------- | ----------- |
+| `ssl_fingerprint on \| off;` | `off` | `http`, `stream` | Enables or disables SSL fingerprint collection globally. |
 
 ### HTTP/Stream module variables
 
@@ -30,6 +36,8 @@ A high performance nginx module for ja4, ja3, and http2 fingerprint.
 
 ```nginx
 http {
+    ssl_fingerprint on;
+
     server {
         listen                 127.0.0.1:4433 ssl;
         ssl_certificate        cert.pem;
@@ -39,6 +47,8 @@ http {
     }
 }
 stream {
+    ssl_fingerprint on;
+
     server {
         listen                 127.0.0.1:4444 ssl;
         ssl_certificate        cert.pem;

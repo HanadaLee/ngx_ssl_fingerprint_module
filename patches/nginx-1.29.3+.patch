@@ -2,10 +2,12 @@ diff --git a/src/event/ngx_event_openssl.c b/src/event/ngx_event_openssl.c
 index 5175d7a..0f8b7a3 100644
 --- a/src/event/ngx_event_openssl.c
 +++ b/src/event/ngx_event_openssl.c
-@@ -17,6 +17,15 @@
+@@ -17,6 +17,23 @@
  #define NGX_SSL_PASSWORD_BUFFER_SIZE  4096
  
  
++#if (NGX_SSL_FINGERPRINT)
++
 +#define ngx_ssl_fingerprint_is_grease(code)                                   \
 +    (((code) & 0x0f0f) == 0x0a0a && ((code) & 0xff) == ((code) >> 8))         \
 +
@@ -15,13 +17,21 @@ index 5175d7a..0f8b7a3 100644
 +     || (c >= '0' && c <= '9'))                                               \
 +
 +
++ngx_uint_t     ngx_ssl_fingerprint_enabled;
++ngx_cycle_t   *ngx_ssl_fingerprint_cycle;
++
++#endif
++
++
  typedef struct {
      ngx_uint_t  engine;   /* unsigned  engine:1; */
  } ngx_openssl_conf_t;
-@@ -2078,6 +2087,259 @@ ngx_ssl_set_session(ngx_connection_t *c, ngx_ssl_session_t *session)
+@@ -2078,6 +2095,261 @@ ngx_ssl_set_session(ngx_connection_t *c, ngx_ssl_session_t *session)
  }
  
  
++#if (NGX_SSL_FINGERPRINT)
++
 +static u_char *
 +ngx_ssl_fingerprint_append_uint16(u_char *dst, uint16_t val)
 +{
@@ -29,25 +39,22 @@ index 5175d7a..0f8b7a3 100644
 +}
 +
 +
-+int
++static int
 +ngx_ssl_client_hello_cb(SSL *s, int *al, void *arg)
 +{
-+    ngx_connection_t  *c;
-+    ngx_str_t         *ja;
-+    size_t             ciphers_len, groups_len, formats_len;
-+    size_t             num_exts, versions_len, alpn_len;
-+    size_t             sig_algos_len;
-+    size_t             i;
 +    int                is_sni;
 +    u_char            *p;
-+    uint16_t           legacy_version, max_version, version;
-+    uint16_t          *exts;
-+    uint16_t           exts_len;
++    size_t             i, ciphers_len, groups_len, formats_len,
++                       num_exts, versions_len, alpn_len, sig_algos_len;
 +    uint8_t            first_alpn_len, first, last;
++    uint16_t           legacy_version, max_version, version, *exts,
++                       exts_len;
++    ngx_str_t         *ja;
++    ngx_connection_t  *c;
 +
 +    static u_char      hex[] = "0123456789abcdef";
-+    const u_char      *ciphers = NULL, *groups = NULL, *formats = NULL;
-+    const u_char      *versions = NULL, *alpn = NULL, *sig_algos = NULL;
++    const u_char      *ciphers = NULL, *groups = NULL, *formats = NULL,
++                      *versions = NULL, *alpn = NULL, *sig_algos = NULL;
 +
 +    ciphers_len = 0;
 +    groups_len = 0;
@@ -201,8 +208,9 @@ index 5175d7a..0f8b7a3 100644
 +        max_version = 0;
 +        for (i = 1; i < versions_len; i += 2) {
 +            version = (versions[i] << 8) | versions[i + 1];
-+            ngx_log_error(NGX_LOG_INFO, c->log, 0, "ngx_ssl_client_hello_cb: "
-+                          "i=%d, version=%d", i, version);
++            ngx_log_error(NGX_LOG_INFO, c->log, 0,
++                          "ngx_ssl_client_hello_cb: i=%uz, version=%ui",
++                          i, (ngx_uint_t) version);
 +            if (!ngx_ssl_fingerprint_is_grease(version)
 +                && version > max_version)
 +            {
@@ -222,8 +230,8 @@ index 5175d7a..0f8b7a3 100644
 +        if (first_alpn_len == 0 || (size_t) 3 + first_alpn_len > alpn_len) {
 +            ngx_log_error(NGX_LOG_ERR, c->log, 0,
 +                          "ngx_ssl_client_hello_cb: "
-+                          "invalid first_alpn_len=%d, alpn_len=%d",
-+                          first_alpn_len, alpn_len);
++                          "invalid first_alpn_len=%ui, alpn_len=%uz",
++                          (ngx_uint_t) first_alpn_len, alpn_len);
 +            goto failed;
 +        }
 +
@@ -254,7 +262,7 @@ index 5175d7a..0f8b7a3 100644
 +    p = ngx_ssl_fingerprint_append_uint16(p, exts_len);
 +    p = ngx_copy(p, exts, exts_len);
 +
-+    /* signature algoritms */
++    /* signature algorithms */
 +    p = ngx_ssl_fingerprint_append_uint16(p, (uint16_t) sig_algos_len);
 +    p = ngx_copy(p, sig_algos, sig_algos_len);
 +
@@ -274,16 +282,22 @@ index 5175d7a..0f8b7a3 100644
 +    return SSL_CLIENT_HELLO_SUCCESS;
 +}
 +
++#endif
++
 +
  ngx_int_t
  ngx_ssl_handshake(ngx_connection_t *c)
  {
-@@ -2097,6 +2359,9 @@ ngx_ssl_handshake(ngx_connection_t *c)
+@@ -2097,6 +2369,13 @@ ngx_ssl_handshake(ngx_connection_t *c)
  
      ngx_ssl_clear_error(c->log);
  
-+    (void) SSL_CTX_set_client_hello_cb(c->ssl->session_ctx,
-+                                       ngx_ssl_client_hello_cb, NULL);
++#if (NGX_SSL_FINGERPRINT)
++    if (ngx_ssl_fingerprint_enabled) {
++        (void) SSL_CTX_set_client_hello_cb(c->ssl->session_ctx,
++                                           ngx_ssl_client_hello_cb, NULL);
++    }
++#endif
 +
      n = SSL_do_handshake(c->ssl->connection);
  
@@ -292,21 +306,25 @@ diff --git a/src/event/ngx_event_openssl.h b/src/event/ngx_event_openssl.h
 index ae0e173..56abca7 100644
 --- a/src/event/ngx_event_openssl.h
 +++ b/src/event/ngx_event_openssl.h
-@@ -144,6 +144,17 @@ struct ngx_ssl_connection_s {
+@@ -144,6 +144,21 @@ struct ngx_ssl_connection_s {
      unsigned                    early_preread:1;
      unsigned                    write_blocked:1;
      unsigned                    sni_accepted:1;
 +
++#if (NGX_SSL_FINGERPRINT)
++
++    uint16_t                    fp_greased;
++
 +    ngx_str_t                   fp_ja3_data;
 +    ngx_str_t                   fp_ja3_str;
 +    ngx_str_t                   fp_ja3_hash;
-+    uint16_t                    fp_tls_greased;
-+
 +    ngx_str_t                   fp_ja4_data;
 +    ngx_str_t                   fp_ja4_r;
 +    ngx_str_t                   fp_ja4;
 +    ngx_str_t                   fp_ja4_ro;
 +    ngx_str_t                   fp_ja4_o;
++
++#endif
  };
  
  

@@ -5,7 +5,16 @@
 #include <ngx_ssl_fingerprint.h>
 
 
+typedef struct {
+    ngx_flag_t  enabled;
+} ngx_http_ssl_fingerprint_main_conf_t;
+
+
 static ngx_int_t ngx_http_ssl_fingerprint_add_variables(ngx_conf_t *cf);
+static void *ngx_http_ssl_fingerprint_create_main_conf(ngx_conf_t *cf);
+static char *ngx_http_ssl_fingerprint_init_main_conf(ngx_conf_t *cf,
+    void *conf);
+static ngx_int_t ngx_http_ssl_fingerprint_is_available(ngx_http_request_t *r);
 static ngx_int_t ngx_http_ssl_greased(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
 static ngx_int_t ngx_http_ssl_fingerprint_ja3(ngx_http_request_t *r,
@@ -22,33 +31,46 @@ static ngx_int_t ngx_http_ssl_fingerprint_ja4_o(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data);
 
 
+static ngx_command_t  ngx_http_ssl_fingerprint_commands[] = {
+
+    { ngx_string("ssl_fingerprint"),
+      NGX_HTTP_MAIN_CONF|NGX_CONF_FLAG,
+      ngx_conf_set_flag_slot,
+      NGX_HTTP_MAIN_CONF_OFFSET,
+      offsetof(ngx_http_ssl_fingerprint_main_conf_t, enabled),
+      NULL },
+
+      ngx_null_command
+};
+
+
 static ngx_http_module_t  ngx_http_ssl_fingerprint_module_ctx = {
-    ngx_http_ssl_fingerprint_add_variables,  /* preconfiguration */
-    NULL,                                    /* postconfiguration */
+    ngx_http_ssl_fingerprint_add_variables,    /* preconfiguration */
+    NULL,                                      /* postconfiguration */
 
-    NULL,                                    /* create main configuration */
-    NULL,                                    /* init main configuration */
+    ngx_http_ssl_fingerprint_create_main_conf, /* create main configuration */
+    ngx_http_ssl_fingerprint_init_main_conf,   /* init main configuration */
 
-    NULL,                                    /* create server configuration */
-    NULL,                                    /* merge server configuration */
+    NULL,                                      /* create server configuration */
+    NULL,                                      /* merge server configuration */
 
-    NULL,                                    /* create location configuration */
-    NULL                                     /* merge location configuration */
+    NULL,                                      /* create location configuration */
+    NULL                                       /* merge location configuration */
 };
 
 
 ngx_module_t  ngx_http_ssl_fingerprint_module = {
     NGX_MODULE_V1,
-    &ngx_http_ssl_fingerprint_module_ctx,    /* module context */
-    NULL,                                    /* module directives */
-    NGX_HTTP_MODULE,                         /* module type */
-    NULL,                                    /* init master */
-    NULL,                                    /* init module */
-    NULL,                                    /* init process */
-    NULL,                                    /* init thread */
-    NULL,                                    /* exit thread */
-    NULL,                                    /* exit process */
-    NULL,                                    /* exit master */
+    &ngx_http_ssl_fingerprint_module_ctx,      /* module context */
+    ngx_http_ssl_fingerprint_commands,         /* module directives */
+    NGX_HTTP_MODULE,                           /* module type */
+    NULL,                                      /* init master */
+    NULL,                                      /* init module */
+    NULL,                                      /* init process */
+    NULL,                                      /* init thread */
+    NULL,                                      /* exit thread */
+    NULL,                                      /* exit process */
+    NULL,                                      /* exit master */
     NGX_MODULE_V1_PADDING
 };
 
@@ -91,7 +113,7 @@ static ngx_int_t
 ngx_http_ssl_greased(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     uintptr_t data)
 {
-    if (r->connection->ssl == NULL) {
+    if (ngx_http_ssl_fingerprint_is_available(r) != NGX_OK) {
         v->not_found = 1;
         return NGX_OK;
     }
@@ -102,7 +124,7 @@ ngx_http_ssl_greased(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     }
 
     v->len = 1;
-    v->data = (u_char*) (r->connection->ssl->fp_tls_greased ? "1" : "0");
+    v->data = (u_char*) (r->connection->ssl->fp_greased ? "1" : "0");
     v->not_found = 0;
     v->valid = 1;
     v->no_cacheable = 0;
@@ -116,7 +138,7 @@ ngx_http_ssl_fingerprint_ja3(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data)
 {
 
-    if (r->connection->ssl == NULL) {
+    if (ngx_http_ssl_fingerprint_is_available(r) != NGX_OK) {
         v->not_found = 1;
         return NGX_OK;
     }
@@ -140,7 +162,7 @@ static ngx_int_t
 ngx_http_ssl_fingerprint_ja3_hash(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data)
 {
-    if (r->connection->ssl == NULL) {
+    if (ngx_http_ssl_fingerprint_is_available(r) != NGX_OK) {
         v->not_found = 1;
         return NGX_OK;
     }
@@ -164,7 +186,7 @@ static ngx_int_t
 ngx_http_ssl_fingerprint_ja4_r(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data)
 {
-    if (r->connection->ssl == NULL) {
+    if (ngx_http_ssl_fingerprint_is_available(r) != NGX_OK) {
         v->not_found = 1;
         return NGX_OK;
     }
@@ -195,7 +217,7 @@ static ngx_int_t
 ngx_http_ssl_fingerprint_ja4(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data)
 {
-    if (r->connection->ssl == NULL) {
+    if (ngx_http_ssl_fingerprint_is_available(r) != NGX_OK) {
         v->not_found = 1;
         return NGX_OK;
     }
@@ -228,7 +250,7 @@ ngx_http_ssl_fingerprint_ja4_ro(ngx_http_request_t *r,
 {
     v->not_found = 1;
 
-    if (r->connection->ssl == NULL) {
+    if (ngx_http_ssl_fingerprint_is_available(r) != NGX_OK) {
         v->not_found = 1;
         return NGX_OK;
     }
@@ -259,7 +281,7 @@ static ngx_int_t
 ngx_http_ssl_fingerprint_ja4_o(ngx_http_request_t *r,
     ngx_http_variable_value_t *v, uintptr_t data)
 {
-    if (r->connection->ssl == NULL) {
+    if (ngx_http_ssl_fingerprint_is_available(r) != NGX_OK) {
         v->not_found = 1;
         return NGX_OK;
     }
@@ -281,6 +303,55 @@ ngx_http_ssl_fingerprint_ja4_o(ngx_http_request_t *r,
     v->not_found = 0;
     v->valid = 1;
     v->no_cacheable = 0;
+
+    return NGX_OK;
+}
+
+
+static void *
+ngx_http_ssl_fingerprint_create_main_conf(ngx_conf_t *cf)
+{
+    ngx_http_ssl_fingerprint_main_conf_t  *conf;
+
+    conf = ngx_pcalloc(cf->pool, sizeof(ngx_http_ssl_fingerprint_main_conf_t));
+    if (conf == NULL) {
+        return NULL;
+    }
+
+    conf->enabled = NGX_CONF_UNSET;
+
+    return conf;
+}
+
+
+static char *
+ngx_http_ssl_fingerprint_init_main_conf(ngx_conf_t *cf, void *conf)
+{
+    ngx_http_ssl_fingerprint_main_conf_t  *smcf = conf;
+
+    if (ngx_ssl_fingerprint_cycle != cf->cycle) {
+        ngx_ssl_fingerprint_cycle = cf->cycle;
+        ngx_ssl_fingerprint_enabled = 0;
+    }
+
+    if (smcf->enabled != NGX_CONF_UNSET) {
+        ngx_ssl_fingerprint_enabled = smcf->enabled;
+    }
+
+    return NGX_CONF_OK;
+}
+
+
+static ngx_int_t
+ngx_http_ssl_fingerprint_is_available(ngx_http_request_t *r)
+{
+    if (!ngx_ssl_fingerprint_enabled) {
+        return NGX_DECLINED;
+    }
+
+    if (r->connection->ssl == NULL) {
+        return NGX_DECLINED;
+    }
 
     return NGX_OK;
 }

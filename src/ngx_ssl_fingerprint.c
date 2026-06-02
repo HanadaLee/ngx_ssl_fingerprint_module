@@ -185,7 +185,7 @@ int ngx_ssl_fingerprint_ja3(ngx_connection_t *c)
     c->ssl->fp_ja3_str.len = p - c->ssl->fp_ja3_str.data;
 
     /* greased */
-    c->ssl->fp_tls_greased = greased;
+    c->ssl->fp_greased = greased;
 
     ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint: "
                   "ja3 str=%V, len=%d", &c->ssl->fp_ja3_str,
