@@ -48,14 +48,14 @@ static ngx_http_module_t  ngx_http_ssl_fingerprint_module_ctx = {
     ngx_http_ssl_fingerprint_add_variables,    /* preconfiguration */
     NULL,                                      /* postconfiguration */
 
-    ngx_http_ssl_fingerprint_create_main_conf, /* create main configuration */
-    ngx_http_ssl_fingerprint_init_main_conf,   /* init main configuration */
+    ngx_http_ssl_fingerprint_create_main_conf, /* create main conf */
+    ngx_http_ssl_fingerprint_init_main_conf,   /* init main conf */
 
-    NULL,                                      /* create server configuration */
-    NULL,                                      /* merge server configuration */
+    NULL,                                      /* create server conf */
+    NULL,                                      /* merge server conf */
 
-    NULL,                                      /* create location configuration */
-    NULL                                       /* merge location configuration */
+    NULL,                                      /* create location conf */
+    NULL                                       /* merge location conf */
 };
 
 
@@ -124,7 +124,7 @@ ngx_http_ssl_greased(ngx_http_request_t *r, ngx_http_variable_value_t *v,
     }
 
     v->len = 1;
-    v->data = (u_char*) (r->connection->ssl->fp_greased ? "1" : "0");
+    v->data = (u_char *) (r->connection->ssl->fp_greased ? "1" : "0");
     v->not_found = 0;
     v->valid = 1;
     v->no_cacheable = 0;

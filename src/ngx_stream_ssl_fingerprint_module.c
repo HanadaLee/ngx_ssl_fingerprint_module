@@ -64,11 +64,11 @@ static ngx_stream_module_t  ngx_stream_ssl_fingerprint_module_ctx = {
     NULL,                                                /* preconfiguration */
     ngx_stream_ssl_fingerprint_add_variables,            /* postconfiguration */
 
-    ngx_stream_ssl_fingerprint_create_main_conf,         /* create main configuration */
-    ngx_stream_ssl_fingerprint_init_main_conf,           /* init main configuration */
+    ngx_stream_ssl_fingerprint_create_main_conf,         /* create main conf */
+    ngx_stream_ssl_fingerprint_init_main_conf,           /* init main conf */
 
-    NULL,                                                /* create server configuration */
-    NULL                                                 /* merge server configuration */
+    NULL,                                                /* create srv conf */
+    NULL                                                 /* merge srv conf */
 };
 
 
@@ -211,7 +211,7 @@ ngx_stream_ssl_greased(ngx_stream_session_t *s,
     }
 
     v->len = 1;
-    v->data = (u_char*)(s->connection->ssl->fp_greased ? "1" : "0");
+    v->data = (u_char *) (s->connection->ssl->fp_greased ? "1" : "0");
 
     v->valid = 1;
     v->no_cacheable = 1;
@@ -340,9 +340,10 @@ ngx_stream_ssl_fingerprint_ja4_ro(ngx_stream_session_t *s,
     return NGX_OK;
 }
 
+
 static ngx_int_t
 ngx_stream_ssl_fingerprint_ja4_o(ngx_stream_session_t *s,
-                 ngx_stream_variable_value_t *v, uintptr_t data)
+    ngx_stream_variable_value_t *v, uintptr_t data)
 {
     if (ngx_stream_ssl_fingerprint_is_available(s) != NGX_OK) {
         v->not_found = 1;

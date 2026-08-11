@@ -12,8 +12,8 @@
 #define NGX_SSL_FINGERPRINT_JA4_C_LEN   12
 
 
-#define ngx_ssl_fingerprint_is_grease(code)                                   \
-    (((code) & 0x0f0f) == 0x0a0a && ((code) & 0xff) == ((code) >> 8))         \
+#define ngx_ssl_fingerprint_is_grease(code)                                  \
+    (((code) & 0x0f0f) == 0x0a0a && ((code) & 0xff) == ((code) >> 8))        \
 
 
 static inline unsigned char *
@@ -88,7 +88,7 @@ int ngx_ssl_fingerprint_ja3(ngx_connection_t *c)
          *  this would help to debug this case, if it happened.
          */
         ngx_log_error(NGX_LOG_INFO, c->log, 0,
-                "ngx_ssl_fingerprint: ja3 fp_ja_data is null");
+                      "ngx_ssl_fingerprint: ja3 fp_ja_data is null");
         return NGX_ERROR;
     }
 
@@ -291,13 +291,19 @@ ngx_ssl_fingerprint_append_count_as_two_digit_string(u_char *dst,
 static int
 ngx_ssl_fingerprint_cmp_uint16(const void *p1, const void *p2)
 {
-    uint16_t u1 = *(const uint16_t *)p1;
-    uint16_t u2 = *(const uint16_t *)p2;
+    uint16_t  u1, u2;
 
-    if (u1 > u2)
+    u1 = *(const uint16_t *) p1;
+    u2 = *(const uint16_t *) p2;
+
+    if (u1 > u2) {
         return 1;
-    if (u1 < u2)
+    }
+
+    if (u1 < u2) {
         return -1;
+    }
+
     return 0;
 }
 
@@ -329,14 +335,15 @@ ngx_ssl_fingerprint_ja4_clean_ciphers(ngx_connection_t *c,
     values = ngx_pnalloc(c->pool, n * sizeof(uint16_t));
     if (values == NULL) {
         ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_fingerprint: ja4_r "
-                "out of memory for cleaned ciphers");
+                      "out of memory for cleaned ciphers");
         return NULL;
     }
 
     q = values;
     for (p = data; p < end; p++) {
-        if (!ngx_ssl_fingerprint_is_grease(*p))
+        if (!ngx_ssl_fingerprint_is_grease(*p)) {
             *q++ = ntohs(*(uint16_t *) p);
+        }
     }
 
     if (!original) {
@@ -397,7 +404,7 @@ ngx_ssl_fingerprint_ja4_clean_extensions(ngx_connection_t *c,
     values = ngx_pnalloc(c->pool, num_cleaned_exts * sizeof(uint16_t));
     if (values == NULL) {
         ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_fingerprint: ja4_r "
-                "out of memory for cleaned extensions");
+                      "out of memory for cleaned extensions");
         return NULL;
     }
 
@@ -482,7 +489,7 @@ ngx_ssl_fingerprint_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dst_field,
     u_char          *p, sni;
     uint16_t        *ciphers_data, *exts_data;
     uint16_t         tls_version, ciphers_len, exts_len, sig_algos_len;
-	uint16_t         sig_algos_data_len;
+    uint16_t         sig_algos_data_len;
     size_t           num_ciphers, num_exts, num_cleaned_exts, num_sig_algos;
 
     first_alpn = NULL;
@@ -500,7 +507,7 @@ ngx_ssl_fingerprint_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dst_field,
          *  this would help to debug this case, if it happened.
          */
         ngx_log_error(NGX_LOG_INFO, c->log, 0,
-                "ngx_ssl_fingerprint: fp_ja4_data is null");
+                      "ngx_ssl_fingerprint: fp_ja4_data is null");
         return NGX_ERROR;
     }
 
@@ -550,12 +557,12 @@ ngx_ssl_fingerprint_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dst_field,
             ngx_log_error(NGX_LOG_WARN, c->log, 0,
                           "ngx_ssl_fingerprint: ja4_r_helper "
                           "sig_algos_len mismatch, outer_len=%d, "
-			              "inner_len=%d, diff must be 2",
+                          "inner_len=%d, diff must be 2",
                           sig_algos_len, sig_algos_data_len);
             dst_field->len = 0;
             return NGX_ERROR;
         }
-    
+
         if (sig_algos_data_len > 0) {
             num_sig_algos = sig_algos_data_len / sizeof(uint16_t);
             sig_algos = data + sizeof(uint16_t);
@@ -568,7 +575,7 @@ ngx_ssl_fingerprint_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dst_field,
                       "ngx_ssl_fingerprint: ja4_r_helper "
                       "end mismatch, got=%p, want=%p, original=%d",
                       data, c->ssl->fp_ja4_data.data + c->ssl->fp_ja4_data.len,
-		              original);
+                      original);
     }
 
     dst_field->len =1 /* protocol */
@@ -606,7 +613,8 @@ ngx_ssl_fingerprint_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dst_field,
     tls_version = *(uint16_t *) data;
     data += sizeof(uint16_t);
     p = ngx_copy(p,
-                ngx_ssl_fingerprint_convert_version_to_string(tls_version), 2);
+                 ngx_ssl_fingerprint_convert_version_to_string(tls_version),
+                 2);
 
     first_alpn = data;
     data += 2;
@@ -644,7 +652,7 @@ ngx_ssl_fingerprint_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dst_field,
 
 static int
 ngx_ssl_fingerprint_ja4_helper(ngx_connection_t *c, ngx_str_t *raw_field,
-	ngx_str_t *dst_field, int original)
+    ngx_str_t *dst_field, int original)
 {
     u_char          hash_buf[EVP_MAX_MD_SIZE], *ptr, *src, *part_end;
     unsigned int    hash_len;
