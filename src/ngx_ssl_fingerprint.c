@@ -6,809 +6,717 @@
 
 #include <ngx_config.h>
 #include <ngx_core.h>
-#include <ngx_http.h>
-#include <ngx_log.h>
-#include <ngx_http_v2.h>
 #include <ngx_md5.h>
 #include <ngx_ssl_fingerprint.h>
 
 
-#define NGX_SSL_FINGERPRINT_JA4_A_LEN   10
-#define NGX_SSL_FINGERPRINT_JA4_B_LEN   12
-#define NGX_SSL_FINGERPRINT_JA4_C_LEN   12
+#define ngx_ssl_fingerprint_grease(n)                                         \
+    (((n) & 0x0f0f) == 0x0a0a && ((n) >> 8) == ((n) & 0xff))
+
+#define ngx_ssl_fingerprint_alnum(c)                                          \
+    (((c) >= '0' && (c) <= '9') || ((c) >= 'A' && (c) <= 'Z')                 \
+     || ((c) >= 'a' && (c) <= 'z'))
 
 
-#define ngx_ssl_fingerprint_is_grease(code)                                  \
-    (((code) & 0x0f0f) == 0x0a0a && ((code) & 0xff) == ((code) >> 8))        \
+enum {
+    NGX_SSL_FP_CIPHERS,
+    NGX_SSL_FP_EXTENSIONS,
+    NGX_SSL_FP_GROUPS,
+    NGX_SSL_FP_FORMATS,
+    NGX_SSL_FP_SIGALGS,
+    NGX_SSL_FP_FIELDS
+};
 
 
-static inline unsigned char *
-ngx_ssl_fingerprint_append_uint16(unsigned char *dst, uint16_t n)
+typedef struct {
+    ngx_str_t   fields[NGX_SSL_FP_FIELDS];
+    ngx_str_t   values[NGX_SSL_FP_VARIABLES];
+    uint16_t    legacy_version;
+    uint16_t    version;
+    u_char      transport;
+    u_char      sni;
+    u_char      alpn[2];
+    ngx_flag_t  greased;
+} ngx_ssl_fingerprint_t;
+
+
+ngx_uint_t    ngx_ssl_fingerprint_enabled;
+ngx_cycle_t  *ngx_ssl_fingerprint_cycle;
+
+static u_char  ngx_ssl_fingerprint_hex[] = "0123456789abcdef";
+
+
+static uint16_t
+ngx_ssl_fingerprint_uint16(const u_char *p)
 {
-    if (n < 10) {
-        dst[0] = n + '0';
-        dst++;
-
-    } else if (n < 100) {
-        dst[1] = n % 10 + '0';
-        dst[0] = n / 10 + '0';
-        dst += 2;
-
-    } else if (n < 1000) {
-        dst[2] = n % 10 + '0';
-        n /= 10;
-        dst[1] = n % 10 + '0';
-        dst[0] = n / 10 + '0';
-        dst += 3;
-
-    }  else if (n < 10000) {
-        dst[3] = n % 10 + '0';
-        n /= 10;
-        dst[2] = n % 10 + '0';
-        n /= 10;
-        dst[1] = n % 10 + '0';
-        dst[0] = n / 10 + '0';
-        dst += 4;
-
-    } else {
-        dst[4] = n % 10 + '0';
-        n /= 10;
-        dst[3] = n % 10 + '0';
-        n /= 10;
-        dst[2] = n % 10 + '0';
-        n /= 10;
-        dst[1] = n % 10 + '0';
-        dst[0] = n / 10 + '0';
-        dst += 5;
-    }
-
-    return dst;
+    return (uint16_t) ((p[0] << 8) | p[1]);
 }
 
 
-/**
- * Params:
- *      c and c->ssl should be valid pointers
- *
- * Returns:
- *      NGX_OK - c->ssl->fp_ja3_str is already set
- *      NGX_ERROR - something went wrong
- */
-int ngx_ssl_fingerprint_ja3(ngx_connection_t *c)
+static ngx_int_t
+ngx_ssl_fingerprint_vector(const u_char **pos, const u_char *end,
+    size_t width, ngx_str_t *value)
 {
-    u_char       *p, *data;
-    size_t        num, i;
-    uint16_t      n, greased;
+    size_t         len;
+    const u_char  *p;
 
-    p = NULL;
-    num = 0;
-    greased = 0;
-
-    data = c->ssl->fp_ja3_data.data;
-    if (data == NULL) {
-        /**
-         *  NOTE:
-         *  If we can't set it in OpenSSL,
-         *  then something defenetly something went wrong.
-         *  Typical production configuration has log level set to error,
-         *  this would help to debug this case, if it happened.
-         */
-        ngx_log_error(NGX_LOG_INFO, c->log, 0,
-                      "ngx_ssl_fingerprint: ja3 fp_ja_data is null");
+    p = *pos;
+    if ((size_t) (end - p) < width) {
         return NGX_ERROR;
     }
 
-    if (c->ssl->fp_ja3_str.data != NULL) {
-        return NGX_OK;
-    }
-
-    c->ssl->fp_ja3_str.len = c->ssl->fp_ja3_data.len * 3;
-    c->ssl->fp_ja3_str.data = ngx_pnalloc(c->pool, c->ssl->fp_ja3_str.len);
-    if (c->ssl->fp_ja3_str.data == NULL) {
-        /* else we break a data stream */
-        c->ssl->fp_ja3_str.len = 0;
+    len = width == 1 ? p[0] : ngx_ssl_fingerprint_uint16(p);
+    p += width;
+    if ((size_t) (end - p) < len) {
         return NGX_ERROR;
     }
 
-    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint: "
-                  "ja3 alloc bytes: %d", c->ssl->fp_ja3_str.len);
-
-    /* version */
-    p = c->ssl->fp_ja3_str.data;
-    p = ngx_ssl_fingerprint_append_uint16(p, *(uint16_t *) data);
-    *p++ = ',';
-    data += 2;
-
-    /* ciphers */
-    num = *(uint16_t *) data;
-    for (i = 2; i <= num; i += 2) {
-        n = ((uint16_t) data[i]) << 8 | ((uint16_t) data[i + 1]);
-
-        if (!ngx_ssl_fingerprint_is_grease(n)) {
-            p = ngx_ssl_fingerprint_append_uint16(p, n);
-            *p++ = '-';
-
-        } else if (greased == 0) {
-            greased = n;
-        }
-    }
-
-    *(p - 1) = ',';
-    data += 2 + num;
-
-    /* extensions */
-    num = *(uint16_t *) data;
-    for (i = 2; i <= num; i += 2) {
-        n = *(uint16_t *) (data + i);
-
-        if (!ngx_ssl_fingerprint_is_grease(n)) {
-            p = ngx_ssl_fingerprint_append_uint16(p, n);
-            *p++ = '-';
-        }
-    }
-
-    if (num != 0) {
-        *(p - 1) = ',';
-        data += 2 + num;
-
-    } else {
-        *(p++) = ',';
-    }
-
-    /* groups */
-    num = *(uint16_t *) data;
-    for (i = 2; i < num; i += 2) {
-        n = ((uint16_t) data[i]) << 8 | ((uint16_t) data[i + 1]);
-
-        if (!ngx_ssl_fingerprint_is_grease(n)) {
-            p = ngx_ssl_fingerprint_append_uint16(p, n);
-            *p++ = '-';
-        }
-    }
-
-    if (num != 0) {
-        *(p - 1) = ',';
-        data += num;
-
-    } else {
-        *(p++) = ',';
-    }
-
-    /* formats */
-    num = *(uint8_t *) data;
-    for (i = 1; i < num; i++) {
-        p = ngx_ssl_fingerprint_append_uint16(p, (uint16_t) data[i]);
-        *p++ = '-';
-    }
-
-    if (num != 0) {
-        data += num;
-        *(p - 1) = ',';
-        *p-- = 0;
-    }
-
-    /* end */
-    c->ssl->fp_ja3_str.len = p - c->ssl->fp_ja3_str.data;
-
-    /* greased */
-    c->ssl->fp_greased = greased;
-
-    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint: "
-                  "ja3 str=%V, len=%d", &c->ssl->fp_ja3_str,
-                  c->ssl->fp_ja3_str.len);
+    value->data = (u_char *) p;
+    value->len = len;
+    *pos = p + len;
 
     return NGX_OK;
 }
 
 
-/**
- * Params:
- *      c and c->ssl should be valid pointers and tested before.
- *
- * Returns:
- *      NGX_OK - c->ssl->fp_ja3_hash is alread set
- *      NGX_ERROR - something went wrong
- */
-int ngx_ssl_fingerprint_ja3_hash(ngx_connection_t *c)
+/* All pointers returned here refer to the message callback's input. */
+static ngx_int_t
+ngx_ssl_fingerprint_parse(const u_char *data, size_t len,
+    ngx_ssl_fingerprint_t *fp, ngx_str_t *extensions)
 {
-    ngx_md5_t       ctx;
-    u_char          hash_buf[16];
+    u_char         first, final;
+    size_t         i, width;
+    uint16_t       type, version;
+    ngx_str_t      value, list, protocol;
+    ngx_uint_t     seen, bit, field;
+    const u_char  *p, *end, *last, *q;
 
-    if (c->ssl->fp_ja3_hash.len > 0) {
+    if (len < 4 + 2 + 32 || data[0] != SSL3_MT_CLIENT_HELLO
+        || ((size_t) data[1] << 16 | (size_t) data[2] << 8 | data[3])
+            != len - 4)
+    {
+        return NGX_ERROR;
+    }
+
+    p = data + 4;
+    end = data + len;
+    fp->legacy_version = ngx_ssl_fingerprint_uint16(p);
+    fp->version = fp->legacy_version;
+    fp->sni = 'i';
+    fp->alpn[0] = '0';
+    fp->alpn[1] = '0';
+    p += 2 + 32;
+
+    if (ngx_ssl_fingerprint_vector(&p, end, 1, &value) != NGX_OK
+        || value.len > 32
+        || ngx_ssl_fingerprint_vector(&p, end, 2,
+                                      &fp->fields[NGX_SSL_FP_CIPHERS]) != NGX_OK
+        || (fp->fields[NGX_SSL_FP_CIPHERS].len & 1)
+        || ngx_ssl_fingerprint_vector(&p, end, 1, &value) != NGX_OK)
+    {
+        return NGX_ERROR;
+    }
+
+    if (p == end) {
         return NGX_OK;
     }
 
-    if (ngx_ssl_fingerprint_ja3(c) != NGX_OK) {
+    if (ngx_ssl_fingerprint_vector(&p, end, 2, extensions) != NGX_OK
+        || p != end)
+    {
         return NGX_ERROR;
     }
 
-    c->ssl->fp_ja3_hash.len = 32;
-    c->ssl->fp_ja3_hash.data = ngx_pnalloc(c->pool, c->ssl->fp_ja3_hash.len);
-    if (c->ssl->fp_ja3_hash.data == NULL) {
-        /* else we can break a stream */
-        c->ssl->fp_ja3_hash.len = 0;
-        return NGX_ERROR;
+    p = extensions->data;
+    seen = 0;
+
+    while (p < end) {
+        if ((size_t) (end - p) < 4) {
+            return NGX_ERROR;
+        }
+
+        type = ngx_ssl_fingerprint_uint16(p);
+        p += 2;
+
+        if (ngx_ssl_fingerprint_vector(&p, end, 2, &value) != NGX_OK) {
+            return NGX_ERROR;
+        }
+
+        fp->fields[NGX_SSL_FP_EXTENSIONS].len += 2;
+        q = value.data;
+        last = q + value.len;
+        bit = 0;
+
+        switch (type) {
+
+        case 0:                         /* server_name */
+            bit = 1;
+            fp->sni = 'd';
+            break;
+
+        case 10:                        /* supported_groups */
+        case 11:                        /* ec_point_formats */
+        case 13:                        /* signature_algorithms */
+            field = type == 10 ? NGX_SSL_FP_GROUPS
+                    : type == 11 ? NGX_SSL_FP_FORMATS : NGX_SSL_FP_SIGALGS;
+            bit = (ngx_uint_t) 1 << field;
+            width = type == 11 ? 1 : 2;
+
+            if (ngx_ssl_fingerprint_vector(&q, last, width, &list) != NGX_OK
+                || q != last || (width == 2 && (list.len & 1)))
+            {
+                return NGX_ERROR;
+            }
+
+            fp->fields[field] = list;
+            break;
+
+        case 16:                        /* ALPN */
+            bit = 1 << 5;
+
+            if (ngx_ssl_fingerprint_vector(&q, last, 2, &list) != NGX_OK
+                || q != last)
+            {
+                return NGX_ERROR;
+            }
+
+            q = list.data;
+            i = 0;
+
+            while (q < last) {
+                if (ngx_ssl_fingerprint_vector(&q, last, 1, &protocol)
+                    != NGX_OK
+                    || protocol.len == 0)
+                {
+                    return NGX_ERROR;
+                }
+
+                if (i++ != 0) {
+                    continue;
+                }
+
+                first = protocol.data[0];
+                final = protocol.data[protocol.len - 1];
+
+                if (ngx_ssl_fingerprint_alnum(first)
+                    && ngx_ssl_fingerprint_alnum(final))
+                {
+                    fp->alpn[0] = first;
+                    fp->alpn[1] = final;
+
+                } else {
+                    fp->alpn[0] = ngx_ssl_fingerprint_hex[first >> 4];
+                    fp->alpn[1] = ngx_ssl_fingerprint_hex[final & 0x0f];
+                }
+            }
+
+            break;
+
+        case 43:                        /* supported_versions */
+            bit = 1 << 6;
+
+            if (ngx_ssl_fingerprint_vector(&q, last, 1, &list) != NGX_OK
+                || q != last || (list.len & 1))
+            {
+                return NGX_ERROR;
+            }
+
+            fp->version = 0;
+
+            for (i = 0; i < list.len; i += 2) {
+                version = ngx_ssl_fingerprint_uint16(list.data + i);
+
+                if (!ngx_ssl_fingerprint_grease(version)
+                    && version > fp->version)
+                {
+                    fp->version = version;
+                }
+            }
+
+            break;
+        }
+
+        if (seen & bit) {
+            return NGX_ERROR;
+        }
+
+        seen |= bit;
     }
-
-    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0, "ngx_ssl_fingerprint: "
-                  "ja3_hash alloc bytes: %d", c->ssl->fp_ja3_hash.len);
-
-    ngx_md5_init(&ctx);
-    ngx_md5_update(&ctx, c->ssl->fp_ja3_str.data, c->ssl->fp_ja3_str.len);
-    ngx_md5_final(hash_buf, &ctx);
-    ngx_hex_dump(c->ssl->fp_ja3_hash.data, hash_buf, 16);
 
     return NGX_OK;
 }
 
 
-static const u_char *
-ngx_ssl_fingerprint_convert_version_to_string(uint16_t tls_version)
+void
+ngx_ssl_fingerprint_message(int write_p, int version, int content_type,
+    const void *buf, size_t len, ngx_ssl_conn_t *ssl, void *arg)
 {
-    switch (tls_version) {
-    case 0x304:
-        return (u_char *) "13";
+    u_char                 *p;
+    size_t                  i, size, offset;
+    ngx_str_t               extensions;
+    const u_char           *data;
+    ngx_connection_t       *c;
+    ngx_ssl_fingerprint_t   hello, *fp;
 
-    case 0x303:
-        return (u_char *) "12";
-
-    case 0x302:
-        return (u_char *) "11";
-
-    case 0x301:
-        return (u_char *) "10";
-
-    case 0x300:
-        return (u_char *) "s3";
-
-    case 0x200:
-        return (u_char *) "s2";
-
-    case 0x100:
-        return (u_char *) "s1";
-
-    case 0xfeff:
-        return (u_char *) "d1";
-
-    case 0xfefd:
-        return (u_char *) "d2";
-
-    case 0xfefc:
-        return (u_char *) "d3";
-
-    default:
-        return (u_char *) "00";
+    data = buf;
+    if (!ngx_ssl_fingerprint_enabled || write_p
+        || content_type != SSL3_RT_HANDSHAKE || len < 4
+        || data[0] != SSL3_MT_CLIENT_HELLO)
+    {
+        return;
     }
+
+    c = ngx_ssl_get_connection(ssl);
+    if (c == NULL || c->ssl == NULL || c->ssl->fp_collected) {
+        return;
+    }
+
+    /* HRR and callback retries must not replace the first ClientHello. */
+
+    c->ssl->fp_collected = 1;
+    ngx_memzero(&hello, sizeof(hello));
+    ngx_str_null(&extensions);
+
+    if (ngx_ssl_fingerprint_parse(data, len, &hello, &extensions) != NGX_OK) {
+        ngx_log_debug0(NGX_LOG_DEBUG_EVENT, c->log, 0,
+                       "ssl fingerprint: invalid ClientHello");
+        return;
+    }
+
+    hello.transport = 't';
+
+#if (NGX_QUIC)
+    if (c->quic || c->type == SOCK_DGRAM) {
+        hello.transport = 'q';
+    }
+#endif
+
+    /* Only retain fingerprint fields, never key shares or extension bodies. */
+
+    size = sizeof(ngx_ssl_fingerprint_t);
+
+    for (i = 0; i < NGX_SSL_FP_FIELDS; i++) {
+        size += hello.fields[i].len;
+    }
+
+    fp = ngx_palloc(c->pool, size);
+    if (fp == NULL) {
+        return;
+    }
+
+    *fp = hello;
+    p = (u_char *) (fp + 1);
+
+    for (i = 0; i < NGX_SSL_FP_FIELDS; i++) {
+        fp->fields[i].data = p;
+
+        if (i == NGX_SSL_FP_EXTENSIONS) {
+            for (offset = 0; offset < extensions.len; /* void */) {
+                data = extensions.data + offset;
+                *p++ = data[0];
+                *p++ = data[1];
+                offset += 4 + ngx_ssl_fingerprint_uint16(data + 2);
+            }
+
+        } else if (hello.fields[i].len) {
+            p = ngx_cpymem(p, hello.fields[i].data, hello.fields[i].len);
+        }
+    }
+
+    data = fp->fields[NGX_SSL_FP_CIPHERS].data;
+    for (i = 0; i < fp->fields[NGX_SSL_FP_CIPHERS].len; i += 2) {
+        if (ngx_ssl_fingerprint_grease(ngx_ssl_fingerprint_uint16(data + i))) {
+            fp->greased = 1;
+            break;
+        }
+    }
+
+    c->ssl->fp_ctx = fp;
 }
 
 
-static u_char *
-ngx_ssl_fingerprint_append_count_as_two_digit_string(u_char *dst,
-    uint16_t count)
+static size_t
+ngx_ssl_fingerprint_count(ngx_str_t *field, ngx_uint_t omit_sni_alpn)
 {
-    if (count <= 9) {
-        *dst++ = '0';
-    }
+    size_t    i, n;
+    uint16_t  value;
 
-    return ngx_ssl_fingerprint_append_uint16(dst, ngx_min(count, 99));
-}
-
-
-static int
-ngx_ssl_fingerprint_cmp_uint16(const void *p1, const void *p2)
-{
-    uint16_t  u1, u2;
-
-    u1 = *(const uint16_t *) p1;
-    u2 = *(const uint16_t *) p2;
-
-    if (u1 > u2) {
-        return 1;
-    }
-
-    if (u1 < u2) {
-        return -1;
-    }
-
-    return 0;
-}
-
-
-static void
-ngx_ssl_fingerprint_sort_uint16(uint16_t *data, size_t count)
-{
-    ngx_qsort(data, count, sizeof(uint16_t), ngx_ssl_fingerprint_cmp_uint16);
-}
-
-
-static uint16_t *
-ngx_ssl_fingerprint_ja4_clean_ciphers(ngx_connection_t *c,
-    const uint16_t *data, size_t len, size_t *out_num, int original)
-{
-    const uint16_t  *end, *p;
-    uint16_t        *values, *q;
-    size_t           n;
-
-    end = (uint16_t *) ((uint8_t *) data + len);
     n = 0;
-
-    for (p = data; p < end; p++) {
-        if (!ngx_ssl_fingerprint_is_grease(*p)) {
+    for (i = 0; i < field->len; i += 2) {
+        value = ngx_ssl_fingerprint_uint16(field->data + i);
+        if (!ngx_ssl_fingerprint_grease(value)
+            && !(omit_sni_alpn && (value == 0 || value == 16)))
+        {
             n++;
         }
     }
 
-    values = ngx_pnalloc(c->pool, n * sizeof(uint16_t));
-    if (values == NULL) {
-        ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_fingerprint: ja4_r "
-                      "out of memory for cleaned ciphers");
-        return NULL;
-    }
-
-    q = values;
-    for (p = data; p < end; p++) {
-        if (!ngx_ssl_fingerprint_is_grease(*p)) {
-            *q++ = ntohs(*(uint16_t *) p);
-        }
-    }
-
-    if (!original) {
-        ngx_ssl_fingerprint_sort_uint16(values, n);
-    }
-
-    *out_num = n;
-
-    return values;
-}
-
-
-static int
-ngx_ssl_fingerprint_is_ignored_non_grease_extension(uint16_t extension)
-{
-    return extension == TLSEXT_TYPE_server_name
-           || extension == TLSEXT_TYPE_application_layer_protocol_negotiation;
-}
-
-
-static int
-ngx_ssl_fingerprint_reject_no_extension(uint16_t extension)
-{
-    return 0;
-}
-
-
-static uint16_t *
-ngx_ssl_fingerprint_ja4_clean_extensions(ngx_connection_t *c,
-    const uint16_t *data, size_t len, size_t *out_num_exts,
-    size_t *out_num_cleaned_exts, int original)
-{
-    const uint16_t  *end, *p;
-    uint16_t        *values, *q;
-    size_t           num_exts, num_cleaned_exts;
-    int            (*filter) (uint16_t);
-
-    end = (uint16_t *) ((uint8_t *) data + len);
-    num_exts = 0;
-    num_cleaned_exts = 0;
-
-    if (original) {
-        filter = ngx_ssl_fingerprint_reject_no_extension;
-
-    } else {
-        filter = ngx_ssl_fingerprint_is_ignored_non_grease_extension;
-    }
-
-    for (p = data; p < end; p++) {
-        if (!ngx_ssl_fingerprint_is_grease(*p)) {
-            num_exts++;
-            if (!filter(*p)) {
-                num_cleaned_exts++;
-            }
-        }
-    }
-
-    values = ngx_pnalloc(c->pool, num_cleaned_exts * sizeof(uint16_t));
-    if (values == NULL) {
-        ngx_log_error(NGX_LOG_WARN, c->log, 0, "ngx_ssl_fingerprint: ja4_r "
-                      "out of memory for cleaned extensions");
-        return NULL;
-    }
-
-    q = values;
-    for (p = data; p < end; p++) {
-        if (!ngx_ssl_fingerprint_is_grease(*p) && !filter(*p)) {
-            *q++ = *p;
-        }
-    }
-
-    if (!original) {
-        ngx_ssl_fingerprint_sort_uint16(values, num_cleaned_exts);
-    }
-
-    *out_num_exts = num_exts;
-    *out_num_cleaned_exts = num_cleaned_exts;
-
-    return values;
+    return n;
 }
 
 
 static u_char *
-ngx_ssl_fingerprint_append_hex_uint16(u_char *dst, const uint16_t *src,
-    size_t count)
+ngx_ssl_fingerprint_decimal(u_char *p, ngx_uint_t value)
 {
-    const uint16_t *p, *end;
-    u_char          hi, lo;
+    u_char  *last;
+    u_char   digits[5];
 
-    static u_char   hex[] = "0123456789abcdef";
-    end = src + count;
+    last = digits + sizeof(digits);
 
-    for (p = src; p < end; p++) {
-        if (p > src) {
-            *dst++ = ',';
-        }
+    do {
+        *--last = (u_char) ('0' + value % 10);
+        value /= 10;
+    } while (value);
 
-        hi = (uint8_t)(*p >> 8);
-        lo = (uint8_t)(*p & 0xff);
-        *dst++ = hex[hi >> 4];
-        *dst++ = hex[hi & 0xf];
-        *dst++ = hex[lo >> 4];
-        *dst++ = hex[lo & 0xf];
-    }
-
-    return dst;
+    return ngx_cpymem(p, last, digits + sizeof(digits) - last);
 }
 
 
-static u_char *
-ngx_ssl_fingerprint_append_hex_uint16_from_bytes(u_char *dst,
-    const u_char *src, size_t src_byte_len)
+static ngx_int_t
+ngx_ssl_fingerprint_store(ngx_connection_t *c, ngx_str_t *value,
+    const u_char *data, size_t len)
 {
-    const u_char  *p, *end;
-    u_char         hi, lo;
-    static u_char  hex[] = "0123456789abcdef";
+    u_char  *p;
 
-    p = src;
-    end = src + src_byte_len;
-
-    while (p < end) {
-        if (p > src) {
-            *dst++ = ',';
-        }
-
-        hi = *p++;
-        lo = *p++;
-        *dst++ = hex[hi >> 4];
-        *dst++ = hex[hi & 0xf];
-        *dst++ = hex[lo >> 4];
-        *dst++ = hex[lo & 0xf];
-    }
-
-    return dst;
-}
-
-
-static int
-ngx_ssl_fingerprint_ja4_r_helper(ngx_connection_t *c, ngx_str_t *dst_field,
-    int original)
-{
-    const u_char    *data, *first_alpn, *sig_algos;
-    u_char          *p, sni;
-    uint16_t        *ciphers_data, *exts_data;
-    uint16_t         tls_version, ciphers_len, exts_len, sig_algos_len;
-    uint16_t         sig_algos_data_len;
-    size_t           num_ciphers, num_exts, num_cleaned_exts, num_sig_algos;
-
-    first_alpn = NULL;
-    sig_algos = NULL;
-    p = NULL;
-    num_sig_algos = 0;
-
-    data = c->ssl->fp_ja4_data.data;
-    if (data == NULL) {
-        /**
-         *  NOTE:
-         *  If we can't set it in OpenSSL,
-         *  then something defenetly something went wrong.
-         *  Typical production configuration has log level set to error,
-         *  this would help to debug this case, if it happened.
-         */
-        ngx_log_error(NGX_LOG_INFO, c->log, 0,
-                      "ngx_ssl_fingerprint: fp_ja4_data is null");
+    p = ngx_pnalloc(c->pool, len);
+    if (p == NULL) {
         return NGX_ERROR;
     }
 
-    if (dst_field->data != NULL) {
-        return NGX_OK;
-    }
-
-    data = c->ssl->fp_ja4_data.data
-           + sizeof(char)      /* protocol */
-           + sizeof(char)      /* sni */
-           + sizeof(uint16_t)  /* version */
-           + sizeof(char) * 2; /* first ALPN */
-
-    (void) ngx_copy(&ciphers_len, data, sizeof(uint16_t));
-    data += sizeof(uint16_t);
-
-    ciphers_data = ngx_ssl_fingerprint_ja4_clean_ciphers(c,
-                                          (const uint16_t *) data, ciphers_len,
-                                          &num_ciphers, original);
-
-    if (ciphers_data == NULL) {
-        dst_field->len = 0;
-        return NGX_ERROR;
-    }
-
-    data += ciphers_len;
-
-    (void) ngx_copy(&exts_len, data, sizeof(uint16_t));
-    data += sizeof(uint16_t);
-    exts_data = ngx_ssl_fingerprint_ja4_clean_extensions(c,
-                                  (const uint16_t *) data, exts_len, &num_exts,
-                                  &num_cleaned_exts, original);
-
-    if (exts_data == NULL) {
-        dst_field->len = 0;
-        return NGX_ERROR;
-    }
-
-    data += exts_len;
-
-    (void) ngx_copy(&sig_algos_len, data, sizeof(uint16_t));
-    data += sizeof(uint16_t);
-
-    if (sig_algos_len >= sizeof(uint16_t)) {
-        sig_algos_data_len = (*data << 8) | *(data + 1); /* big endian */
-        if (sig_algos_len != sig_algos_data_len + sizeof(uint16_t)) {
-            ngx_log_error(NGX_LOG_WARN, c->log, 0,
-                          "ngx_ssl_fingerprint: ja4_r_helper "
-                          "sig_algos_len mismatch, outer_len=%d, "
-                          "inner_len=%d, diff must be 2",
-                          sig_algos_len, sig_algos_data_len);
-            dst_field->len = 0;
-            return NGX_ERROR;
-        }
-
-        if (sig_algos_data_len > 0) {
-            num_sig_algos = sig_algos_data_len / sizeof(uint16_t);
-            sig_algos = data + sizeof(uint16_t);
-            data = sig_algos + sig_algos_data_len;
-        }
-    }
-
-    if (data != c->ssl->fp_ja4_data.data + c->ssl->fp_ja4_data.len) {
-        ngx_log_error(NGX_LOG_WARN, c->log, 0,
-                      "ngx_ssl_fingerprint: ja4_r_helper "
-                      "end mismatch, got=%p, want=%p, original=%d",
-                      data, c->ssl->fp_ja4_data.data + c->ssl->fp_ja4_data.len,
-                      original);
-    }
-
-    dst_field->len =1 /* protocol */
-          + 2 /* TLS version */
-          + 1 /* SNI */
-          + 2 /* Number of Cipher Suites */
-          + 2 /* Number of Extensions */
-          + 2 /* First ALPN */
-          + 1 /* '_' */
-          + 4 * num_ciphers + (num_ciphers - 1) /* ciphers 4-char hex csv */
-          + 1                                             /* '_' */
-          + 4 * num_cleaned_exts + (num_cleaned_exts - 1) /* hex csv */
-          + (num_sig_algos > 0
-             ? 1 + 4 * num_sig_algos + (num_sig_algos - 1) /* '_' hex csv */
-             : 0);
-    dst_field->data = ngx_pnalloc(c->pool, dst_field->len);
-    if (dst_field->data == NULL) {
-        /* else we break a data stream */
-        dst_field->len = 0;
-        return NGX_ERROR;
-    }
-
-    /*
-     * https://github.com/FoxIO-LLC/ja4/blob/main/technical_details/JA4.md
-     */
-
-    data = c->ssl->fp_ja4_data.data;
-
-    /* protocol */
-    p = dst_field->data;
-    *p++ = *data++;
-    sni = *data++;
-
-    /* version */
-    tls_version = *(uint16_t *) data;
-    data += sizeof(uint16_t);
-    p = ngx_copy(p,
-                 ngx_ssl_fingerprint_convert_version_to_string(tls_version),
-                 2);
-
-    first_alpn = data;
-    data += 2;
-
-    /* sni */
-    *p++ = sni;
-
-    /* number of ciphers */
-    p = ngx_ssl_fingerprint_append_count_as_two_digit_string(p, num_ciphers);
-
-    /* number of extensions */
-    p = ngx_ssl_fingerprint_append_count_as_two_digit_string(p, num_exts);
-
-    /* first ALPN */
-    p = ngx_copy(p, first_alpn, 2);
-
-    /* ciphers */
-    *p++ = '_';
-    p = ngx_ssl_fingerprint_append_hex_uint16(p, ciphers_data, num_ciphers);
-
-    /* extensions */
-    *p++ = '_';
-    p = ngx_ssl_fingerprint_append_hex_uint16(p, exts_data, num_cleaned_exts);
-
-    /* signature algorithms */
-    if (num_sig_algos > 0) {
-        *p++ = '_';
-        p = ngx_ssl_fingerprint_append_hex_uint16_from_bytes(p, sig_algos,
-                                                           sig_algos_data_len);
-    }
+    ngx_memcpy(p, data, len);
+    value->data = p;
+    value->len = len;
 
     return NGX_OK;
 }
 
 
-static int
-ngx_ssl_fingerprint_ja4_helper(ngx_connection_t *c, ngx_str_t *raw_field,
-    ngx_str_t *dst_field, int original)
+static ngx_int_t
+ngx_ssl_fingerprint_ja3(ngx_connection_t *c, ngx_ssl_fingerprint_t *fp,
+    ngx_uint_t index)
 {
-    u_char          hash_buf[EVP_MAX_MD_SIZE], *ptr, *src, *part_end;
-    unsigned int    hash_len;
-    const EVP_MD   *digest;
-    EVP_MD_CTX     *ctx;
-    int             ret;
+    u_char     *buf, *p;
+    size_t      i, j, size, width;
+    uint16_t    value;
+    ngx_int_t   rc;
+    ngx_str_t  *field;
+    ngx_md5_t   md5;
+    ngx_uint_t  first;
+    u_char      small[2048], digest[16], hex[32];
 
-    ret = NGX_ERROR;
+    size = 5 + 4;
+    for (i = NGX_SSL_FP_CIPHERS; i <= NGX_SSL_FP_FORMATS; i++) {
+        field = &fp->fields[i];
+        size += i == NGX_SSL_FP_FORMATS ? field->len * 4 : field->len * 3;
+    }
 
-    if (dst_field->len > 0) {
+    buf = small;
+    if (size > sizeof(small)) {
+        buf = ngx_alloc(size, c->log);
+        if (buf == NULL) {
+            return NGX_ERROR;
+        }
+    }
+
+    p = ngx_ssl_fingerprint_decimal(buf, fp->legacy_version);
+    for (i = NGX_SSL_FP_CIPHERS; i <= NGX_SSL_FP_FORMATS; i++) {
+        *p++ = ',';
+        first = 1;
+        field = &fp->fields[i];
+        width = i == NGX_SSL_FP_FORMATS ? 1 : 2;
+
+        for (j = 0; j < field->len; j += width) {
+            value = width == 1 ? field->data[j]
+                    : ngx_ssl_fingerprint_uint16(field->data + j);
+            if (width == 2 && ngx_ssl_fingerprint_grease(value)) {
+                continue;
+            }
+
+            if (!first) {
+                *p++ = '-';
+            }
+
+            first = 0;
+            p = ngx_ssl_fingerprint_decimal(p, value);
+        }
+    }
+
+    if (index == NGX_SSL_FP_JA3_HASH) {
+        ngx_md5_init(&md5);
+        ngx_md5_update(&md5, buf, p - buf);
+        ngx_md5_final(digest, &md5);
+        ngx_hex_dump(hex, digest, sizeof(digest));
+        rc = ngx_ssl_fingerprint_store(c, &fp->values[index], hex, sizeof(hex));
+
+    } else {
+        rc = ngx_ssl_fingerprint_store(c, &fp->values[index], buf, p - buf);
+    }
+
+    if (buf != small) {
+        ngx_free(buf);
+    }
+
+    return rc;
+}
+
+
+static int
+ngx_ssl_fingerprint_compare(const void *a, const void *b)
+{
+    uint16_t  x, y;
+
+    x = *(const uint16_t *) a;
+    y = *(const uint16_t *) b;
+
+    return (x > y) - (x < y);
+}
+
+
+static u_char *
+ngx_ssl_fingerprint_csv(u_char *p, ngx_str_t *field, uint16_t *values,
+    ngx_uint_t sort, ngx_uint_t omit_sni_alpn)
+{
+    size_t    i, n;
+    uint16_t  value;
+
+    n = 0;
+    for (i = 0; i < field->len; i += 2) {
+        value = ngx_ssl_fingerprint_uint16(field->data + i);
+        if (!ngx_ssl_fingerprint_grease(value)
+            && !(omit_sni_alpn && (value == 0 || value == 16)))
+        {
+            values[n++] = value;
+        }
+    }
+
+    if (sort && n > 1) {
+        ngx_qsort(values, n, sizeof(uint16_t), ngx_ssl_fingerprint_compare);
+    }
+
+    for (i = 0; i < n; i++) {
+        if (i) {
+            *p++ = ',';
+        }
+
+        value = values[i];
+        *p++ = ngx_ssl_fingerprint_hex[value >> 12];
+        *p++ = ngx_ssl_fingerprint_hex[(value >> 8) & 15];
+        *p++ = ngx_ssl_fingerprint_hex[(value >> 4) & 15];
+        *p++ = ngx_ssl_fingerprint_hex[value & 15];
+    }
+
+    return p;
+}
+
+
+static const char *
+ngx_ssl_fingerprint_version(uint16_t version)
+{
+    switch (version) {
+
+    case 0x0002:
+        return "s2";
+
+    case 0x0300:
+        return "s3";
+
+    case 0x0301:
+        return "10";
+
+    case 0x0302:
+        return "11";
+
+    case 0x0303:
+        return "12";
+
+    case 0x0304:
+        return "13";
+
+    default:
+        return "00";
+    }
+}
+
+
+static ngx_int_t
+ngx_ssl_fingerprint_digest(EVP_MD_CTX *ctx, u_char *out, u_char *data,
+    size_t len)
+{
+    unsigned int  size;
+    u_char        digest[EVP_MAX_MD_SIZE];
+
+    if (len == 0) {
+        ngx_memset(out, '0', 12);
         return NGX_OK;
     }
 
-    if (ngx_ssl_fingerprint_ja4_r_helper(c, raw_field, original) != NGX_OK) {
+    if (EVP_DigestInit_ex(ctx, EVP_sha256(), NULL) != 1
+        || EVP_DigestUpdate(ctx, data, len) != 1
+        || EVP_DigestFinal_ex(ctx, digest, &size) != 1 || size != 32)
+    {
         return NGX_ERROR;
     }
 
-    dst_field->len = NGX_SSL_FINGERPRINT_JA4_A_LEN + 1
-                     + NGX_SSL_FINGERPRINT_JA4_B_LEN + 1
-                     + NGX_SSL_FINGERPRINT_JA4_C_LEN;
-    dst_field->data = ngx_pnalloc(c->pool, dst_field->len);
-    if (dst_field->data == NULL) {
-        /* else we can break a stream */
-        dst_field->len = 0;
-        return NGX_ERROR;
+    ngx_hex_dump(out, digest, 6);
+
+    return NGX_OK;
+}
+
+
+static ngx_int_t
+ngx_ssl_fingerprint_ja4(ngx_connection_t *c, ngx_ssl_fingerprint_t *fp,
+    ngx_uint_t index)
+{
+    u_char      *buf, *p, *ciphers, *exts;
+    size_t       nciphers, nexts, nsigalgs, total_exts, size, count;
+    size_t       cipher_len, ext_len;
+    uint16_t    *values;
+    ngx_int_t    rc;
+    ngx_uint_t   original;
+    EVP_MD_CTX  *ctx;
+    u_char       small[2048], hash[36];
+    uint16_t     small_values[128];
+
+    original = index == NGX_SSL_FP_JA4_RO || index == NGX_SSL_FP_JA4_O;
+    nciphers = ngx_ssl_fingerprint_count(&fp->fields[NGX_SSL_FP_CIPHERS], 0);
+    nexts = ngx_ssl_fingerprint_count(&fp->fields[NGX_SSL_FP_EXTENSIONS],
+                                      !original);
+    total_exts = ngx_ssl_fingerprint_count(&fp->fields[NGX_SSL_FP_EXTENSIONS],
+                                           0);
+    nsigalgs = ngx_ssl_fingerprint_count(&fp->fields[NGX_SSL_FP_SIGALGS], 0);
+
+    size = 12 + (nciphers ? 5 * nciphers - 1 : 0)
+              + (nexts ? 5 * nexts - 1 : 0)
+              + (nsigalgs ? 5 * nsigalgs : 0);
+    count = ngx_max(nciphers, ngx_max(nexts, nsigalgs));
+    buf = small;
+    values = small_values;
+    rc = NGX_ERROR;
+    ctx = NULL;
+
+    if (size > sizeof(small)) {
+        buf = ngx_alloc(size, c->log);
+        if (buf == NULL) {
+            return NGX_ERROR;
+        }
     }
 
-    ngx_log_debug(NGX_LOG_DEBUG_EVENT, c->log, 0,
-                  "ngx_ssl_fingerprint: ja4_hash alloc bytes: %d",
-                  dst_field->len);
+    if (count > sizeof(small_values) / sizeof(uint16_t)) {
+        values = ngx_alloc(count * sizeof(uint16_t), c->log);
+        if (values == NULL) {
+            goto done;
+        }
+    }
 
-    /* JA4_a part */
-    src = raw_field->data;
-    ptr = dst_field->data;
-    ptr = ngx_cpymem(ptr, src, NGX_SSL_FINGERPRINT_JA4_A_LEN);
-    *ptr++ = '_';
+    p = buf;
+    *p++ = fp->transport;
+    p = ngx_cpymem(p, ngx_ssl_fingerprint_version(fp->version), 2);
+    *p++ = fp->sni;
+    *p++ = (u_char) ('0' + ngx_min(nciphers, 99) / 10);
+    *p++ = (u_char) ('0' + ngx_min(nciphers, 99) % 10);
+    *p++ = (u_char) ('0' + ngx_min(total_exts, 99) / 10);
+    *p++ = (u_char) ('0' + ngx_min(total_exts, 99) % 10);
+    *p++ = fp->alpn[0];
+    *p++ = fp->alpn[1];
+    *p++ = '_';
+    ciphers = p;
+    p = ngx_ssl_fingerprint_csv(p, &fp->fields[NGX_SSL_FP_CIPHERS], values,
+                                !original, 0);
+    cipher_len = p - ciphers;
+    *p++ = '_';
+    exts = p;
+    p = ngx_ssl_fingerprint_csv(p, &fp->fields[NGX_SSL_FP_EXTENSIONS], values,
+                                !original, !original);
+
+    if (nsigalgs) {
+        *p++ = '_';
+        p = ngx_ssl_fingerprint_csv(p, &fp->fields[NGX_SSL_FP_SIGALGS], values,
+                                    0, 0);
+    }
+
+    ext_len = p - exts;
+
+    if (index == NGX_SSL_FP_JA4_R || index == NGX_SSL_FP_JA4_RO) {
+        rc = ngx_ssl_fingerprint_store(c, &fp->values[index], buf, p - buf);
+        goto done;
+    }
 
     ctx = EVP_MD_CTX_new();
-    digest = EVP_sha256();
+    if (ctx == NULL) {
+        goto done;
+    }
 
-    /* JA4_b part */
-    src += NGX_SSL_FINGERPRINT_JA4_A_LEN + 1;
-    part_end = (u_char *) ngx_strchr(src, '_');
+    ngx_memcpy(hash, buf, 11);
+    hash[23] = '_';
 
-    EVP_MD_CTX_set_flags(ctx, EVP_MD_CTX_FLAG_ONESHOT);
-
-    if ((EVP_DigestInit_ex(ctx, digest, NULL)
-         && EVP_DigestUpdate(ctx, src, part_end - src)
-         && EVP_DigestFinal_ex(ctx, hash_buf, &hash_len)) != 1)
+    if (ngx_ssl_fingerprint_digest(ctx, hash + 11, ciphers, cipher_len)
+        != NGX_OK
+        || ngx_ssl_fingerprint_digest(ctx, hash + 24, exts, ext_len) != NGX_OK)
     {
-        ngx_log_error(NGX_LOG_ERR, c->log, 0,
-                      "ngx_ssl_fingerprint: ja4_helper "
-                      "failed to digest JA4_b");
-        goto failed;
+        goto done;
     }
 
-    ngx_hex_dump(ptr, hash_buf, NGX_SSL_FINGERPRINT_JA4_B_LEN / 2);
-    ptr += NGX_SSL_FINGERPRINT_JA4_B_LEN;
-    *ptr++ = '_';
+    rc = ngx_ssl_fingerprint_store(c, &fp->values[index], hash, sizeof(hash));
 
-    /* JA4_c part */
-    src = part_end + 1;
-    part_end = raw_field->data + raw_field->len;
-
-    if (part_end == src) {
-        (void) ngx_copy(ptr, "000000000000", NGX_SSL_FINGERPRINT_JA4_C_LEN);
-
-    } else {
-        EVP_MD_CTX_set_flags(ctx, EVP_MD_CTX_FLAG_ONESHOT);
-
-        if ((EVP_DigestInit_ex(ctx, digest, NULL)
-             && EVP_DigestUpdate(ctx, src, part_end - src)
-             && EVP_DigestFinal_ex(ctx, hash_buf, &hash_len)) != 1)
-        {
-            ngx_log_error(NGX_LOG_ERR, c->log, 0,
-                          "ngx_ssl_fingerprint: ja4_helper "
-                          "failed to digest JA4_c");
-            goto failed;
-        }
-
-        ngx_hex_dump(ptr, hash_buf, NGX_SSL_FINGERPRINT_JA4_C_LEN / 2);
-    }
-
-    ret = NGX_OK;
-
-failed:
+done:
 
     EVP_MD_CTX_free(ctx);
 
-    return ret;
+    if (values != small_values && values != NULL) {
+        ngx_free(values);
+    }
+
+    if (buf != small) {
+        ngx_free(buf);
+    }
+
+    return rc;
 }
 
 
-/**
- * Params:
- *      c and c->ssl should be valid pointers
- *
- * Returns:
- *      NGX_OK - c->ssl->fp_ja4_r is already set
- *      NGX_ERROR - something went wrong
- */
-int
-ngx_ssl_fingerprint_ja4_r(ngx_connection_t *c)
+ngx_int_t
+ngx_ssl_fingerprint_variable(ngx_connection_t *c, ngx_uint_t index,
+    ngx_str_t *value)
 {
-    return ngx_ssl_fingerprint_ja4_r_helper(c, &c->ssl->fp_ja4_r, 0);
-}
+    ngx_int_t               rc;
+    ngx_ssl_fingerprint_t  *fp;
 
+    ngx_str_null(value);
+    if (!ngx_ssl_fingerprint_enabled || index >= NGX_SSL_FP_VARIABLES
+        || c == NULL || c->ssl == NULL || c->ssl->connection == NULL)
+    {
+        return NGX_DECLINED;
+    }
 
-/**
- * Params:
- *      c and c->ssl should be valid pointers and tested before.
- *
- * Returns:
- *      NGX_OK - c->ssl->fp_ja4 is alread set
- *      NGX_ERROR - something went wrong
- */
-int
-ngx_ssl_fingerprint_ja4(ngx_connection_t *c)
-{
-    return ngx_ssl_fingerprint_ja4_helper(c, &c->ssl->fp_ja4_r,
-                                          &c->ssl->fp_ja4, 0);
-}
+    /* HTTP/3 streams share SSL but have shorter-lived connection pools. */
 
+    c = ngx_ssl_get_connection(c->ssl->connection);
+    if (c == NULL || c->ssl == NULL || c->ssl->fp_ctx == NULL) {
+        return NGX_DECLINED;
+    }
 
-/**
- * Params:
- *      c and c->ssl should be valid pointers
- *
- * Returns:
- *      NGX_OK - c->ssl->fp_ja4_ro is already set
- *      NGX_ERROR - something went wrong
- */
-int
-ngx_ssl_fingerprint_ja4_ro(ngx_connection_t *c)
-{
-    return ngx_ssl_fingerprint_ja4_r_helper(c, &c->ssl->fp_ja4_ro, 1);
-}
+    fp = c->ssl->fp_ctx;
+    if (index == NGX_SSL_FP_GREASED) {
+        value->data = (u_char *) (fp->greased ? "1" : "0");
+        value->len = 1;
 
+        return NGX_OK;
+    }
 
-/**
- * Params:
- *      c and c->ssl should be valid pointers and tested before.
- *
- * Returns:
- *      NGX_OK - c->ssl->fp_ja4_o is alread set
- *      NGX_ERROR - something went wrong
- */
-int
-ngx_ssl_fingerprint_ja4_o(ngx_connection_t *c)
-{
-    return ngx_ssl_fingerprint_ja4_helper(c, &c->ssl->fp_ja4_ro,
-                                          &c->ssl->fp_ja4_o, 1);
+    if (fp->values[index].data == NULL) {
+        if (index == NGX_SSL_FP_JA3 || index == NGX_SSL_FP_JA3_HASH) {
+            rc = ngx_ssl_fingerprint_ja3(c, fp, index);
+
+        } else {
+            rc = ngx_ssl_fingerprint_ja4(c, fp, index);
+        }
+
+        if (rc != NGX_OK) {
+            return rc;
+        }
+    }
+
+    *value = fp->values[index];
+
+    return NGX_OK;
 }

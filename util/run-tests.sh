@@ -24,7 +24,6 @@ configure_args=(
 
 openssl_source="$module_root/.ci/openssl"
 patch -d "$nginx_source" -p1 --forward < "$module_root/patches/nginx-1.29.3+.patch"
-patch -d "$openssl_source" -p1 --forward < "$module_root/patches/openssl-3.5.5+.patch"
 configure_args+=(--with-openssl="$openssl_source" --with-openssl-opt=no-tests)
 
 configure_args+=(--add-module="$module_root")
