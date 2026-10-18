@@ -88,6 +88,6 @@ is(stream(
 	PeerAddr => '127.0.0.1:' . port(8444),
 	SSL => 1,
 	SSL_hostname => 'localhost'
-)->read(), '||||||', 'stream fingerprints are disabled by default');
+)->io(''), '||||||', 'stream fingerprints are disabled by default');
 
 ###############################################################################

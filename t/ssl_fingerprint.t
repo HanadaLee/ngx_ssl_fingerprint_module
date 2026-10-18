@@ -122,11 +122,12 @@ is(substr($http[3], 0, 10), substr($http[5], 0, 10),
 	'HTTP JA4 variants retain the same prefix');
 is($http_again, $http, 'HTTP repeated variable reads are stable');
 
+# Read until EOF: the combined fingerprints can exceed a single read buffer.
 my $stream = stream(
 	PeerAddr => '127.0.0.1:' . port(8444),
 	SSL => 1,
 	SSL_hostname => 'localhost'
-)->read();
+)->io('');
 my @stream = fingerprints($stream);
 
 is(scalar @stream, 7, 'stream exposes all fingerprint variables');
@@ -146,7 +147,7 @@ is(substr($stream[3], 0, 10), substr($stream[5], 0, 10),
 
 is(http_content(http_get('/')), '||||||',
 	'HTTP variables are empty without TLS');
-is(stream('127.0.0.1:' . port(8081))->read(), '||||||',
+is(stream('127.0.0.1:' . port(8081))->io(''), '||||||',
 	'stream variables are empty without TLS');
 
 ###############################################################################
