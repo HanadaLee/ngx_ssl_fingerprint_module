@@ -1,10 +1,14 @@
 # ngx_ssl_fingerprint_module
 
-A high performance nginx module for ja4, ja3, and http2 fingerprint.
+A high performance nginx module for TLS JA3 and JA4 fingerprints.
 
 ## Patches
- - [nginx - save ja3/http2 fingerprint](patches)
- - [openssl - save clienthello data](patches)
+ - [nginx - capture ClientHello fingerprint fields](patches/nginx-1.29.3+.patch)
+
+No OpenSSL patch is required. The first ClientHello is captured without
+replacing the ClientHello callbacks used by virtual servers or Lua.
+Only fingerprint fields are retained; results are generated on demand and
+cached for the lifetime of the TLS connection, including QUIC connections.
 
 ### Support Matrix
 
@@ -73,7 +77,6 @@ $ git clone -b ja4_fingerprint https://git.hanada.info/hanada/ngx_ssl_fingerprin
 
 # Patch
 
-$ patch -p1 -d openssl < ngx_ssl_fingerprint_module/patches/openssl.openssl-3.5.5+.patch
 $ patch -p1 < ngx_ssl_fingerprint_module/patches/nginx-1.29.3+.patch
 
 # Build
