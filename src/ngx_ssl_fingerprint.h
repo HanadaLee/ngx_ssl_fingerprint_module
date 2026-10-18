@@ -1,3 +1,9 @@
+/*
+ * Copyright (C) 2020-2024 Phus Lu
+ * Copyright (C) Hanada
+ */
+
+
 
 /*
  * Obj: ngx_ssl_fingerprint.c

@@ -1,3 +1,9 @@
+/*
+ * Copyright (C) 2020-2024 Phus Lu
+ * Copyright (C) Hanada
+ */
+
+
 
 #include <ngx_config.h>
 #include <ngx_core.h>
