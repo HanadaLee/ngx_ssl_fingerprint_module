@@ -61,8 +61,46 @@ jobs:
             libssl-dev \
             zlib1g-dev \
             perl \
+            python3 \
             pkg-config \
+            libcryptx-perl \
             libio-socket-ssl-perl
+
+      - name: Check out LuaJIT
+        uses: actions/checkout@v6
+        with:
+          repository: openresty/luajit2
+          path: .ci/luajit
+          persist-credentials: false
+
+      - name: Check out OpenResty TLS callback patches
+        uses: actions/checkout@v6
+        with:
+          repository: openresty/openresty
+          ref: f4fa4de37a3408f624e1a33f69e1d8817e2a99b5
+          path: .ci/openresty
+          persist-credentials: false
+
+      - name: Check out Lua module
+        uses: actions/checkout@v6
+        with:
+          repository: openresty/lua-nginx-module
+          path: .ci/lua-nginx-module
+          persist-credentials: false
+
+      - name: Check out Lua core library
+        uses: actions/checkout@v6
+        with:
+          repository: openresty/lua-resty-core
+          path: .ci/lua-resty-core
+          persist-credentials: false
+
+      - name: Check out Lua LRU cache library
+        uses: actions/checkout@v6
+        with:
+          repository: openresty/lua-resty-lrucache
+          path: .ci/lua-resty-lrucache
+          persist-credentials: false
 
       - name: Build and test
         env:
