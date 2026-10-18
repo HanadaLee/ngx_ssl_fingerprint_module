@@ -73,7 +73,7 @@ stream {
 $ git clone -b release-1.29.3 --depth=1 https://github.com/nginx/nginx
 $ cd nginx
 $ git clone -b openssl-3.5.5 --depth=1 https://github.com/openssl/openssl
-$ git clone -b ja4_fingerprint https://git.hanada.info/hanada/ngx_ssl_fingerprint_module
+$ git clone -b main https://git.hanada.info/hanada/ngx_ssl_fingerprint_module
 
 # Patch
 
