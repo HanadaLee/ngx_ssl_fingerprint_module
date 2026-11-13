@@ -51,6 +51,26 @@ export LUA_PATH="$TEST_FINGERPRINT_LUA_PATH"
 configure_args+=(--add-module="$module_root")
 
 cd "$nginx_source"
+dynamic_args=("${configure_args[@]}")
+dynamic_args[${#dynamic_args[@]}-1]="--add-dynamic-module=$module_root"
+if sh ./configure "${dynamic_args[@]}" > "$test_output/dynamic-rejected.log" 2>&1; then
+    echo 'configure unexpectedly accepted a dynamic module'
+    exit 1
+fi
+grep -F 'ngx_ssl_fingerprint_module must be built with --add-module' "$test_output/dynamic-rejected.log"
+
+stream_args=("${configure_args[@]}")
+for index in "${!stream_args[@]}"; do
+    if [[ "${stream_args[index]}" == --with-stream ]]; then
+        stream_args[index]=--with-stream=dynamic
+    fi
+done
+if sh ./configure "${stream_args[@]}" > "$test_output/dynamic-stream-rejected.log" 2>&1; then
+    echo 'configure unexpectedly accepted a dynamic Stream subsystem'
+    exit 1
+fi
+grep -F 'requires a static Stream subsystem' "$test_output/dynamic-stream-rejected.log"
+
 sh ./configure "${configure_args[@]}"
 make -j"$build_jobs"
 

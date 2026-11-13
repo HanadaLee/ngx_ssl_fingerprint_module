@@ -6,6 +6,16 @@
 ngx_http_addon_name=ngx_http_ssl_fingerprint_module
 ngx_stream_addon_name=ngx_stream_ssl_fingerprint_module
 
+if [ "$ngx_module_link" = DYNAMIC ]; then
+    echo "$0: error: ngx_ssl_fingerprint_module must be built with --add-module"
+    exit 1
+fi
+
+if [ "$STREAM" = DYNAMIC ] && [ "$STREAM_SSL" = YES ]; then
+    echo "$0: error: ngx_ssl_fingerprint_module requires a static Stream subsystem (--with-stream)"
+    exit 1
+fi
+
 SSL_FINGERPRINT_DEPS="$ngx_addon_dir/src/ngx_ssl_fingerprint.h"
 COMMON_SSL_FINGERPRINT_SRCS="$ngx_addon_dir/src/ngx_ssl_fingerprint.c"
 HTTP_SSL_FINGERPRINT_SRCS="$ngx_addon_dir/src/ngx_http_ssl_fingerprint_module.c"

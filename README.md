@@ -66,6 +66,8 @@ stream {
 
 ## Quick Start
 
+Build with `--add-module`. When enabling Stream support, use `--with-stream`. Dynamic modules and a dynamic Stream subsystem are not supported.
+
 ```bash
 
 # Clone
