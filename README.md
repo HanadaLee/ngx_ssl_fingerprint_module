@@ -1,103 +1,147 @@
 # ngx_ssl_fingerprint_module
 
-A high performance nginx module for TLS JA3 and JA4 fingerprints.
+Exposes JA3 and JA4 TLS client fingerprints as nginx variables for HTTP and Stream, including HTTP/3 connections.
 
-## Patches
- - [nginx - capture ClientHello fingerprint fields](patches/nginx-1.29.3+.patch)
+## Table of Contents
 
-No OpenSSL patch is required. The first ClientHello is captured without
-replacing the ClientHello callbacks used by virtual servers or Lua.
-Only fingerprint fields are retained; results are generated on demand and
-cached for the lifetime of the TLS connection, including QUIC connections.
+- [Synopsis](#synopsis)
+- [Installation](#installation)
+- [Directives](#directives)
+  - [ssl_fingerprint](#ssl_fingerprint)
+- [Embedded Variables](#embedded-variables)
+- [Tests](#tests)
+- [Author and license](#author-and-license)
 
-### Support Matrix
-
-|              | openssl-3.5.4+ |
-| -------------| ------------- |
-| nginx-1.29.3 | ✅            |
-
-## Configuration
-
-### Directives
-
-| Syntax | Default | Context | Description |
-| ------ | ------- | ------- | ----------- |
-| `ssl_fingerprint on \| off;` | `off` | `http`, `stream` | Enables or disables SSL fingerprint collection globally. |
-
-### HTTP/Stream module variables
-
-| Name                     | Default Value | Comments                 |
-| ------------------------ | ------------- | ------------------------ |
-| ssl_greased              | 0             | TLS greased flag.        |
-| ssl_fingerprint_ja3      | NULL          | The ja3 fingerprint.     |
-| ssl_fingerprint_ja3_hash | NULL          | The ja3 fingerprint hash.|
-| ssl_fingerprint_ja4_r    | NULL          | The ja4 raw fingerprint. |
-| ssl_fingerprint_ja4      | NULL          | The ja4 fingerprint.     |
-| ssl_fingerprint_ja4_ro   | NULL          | The ja4 original raw fingerprint. |
-| ssl_fingerprint_ja4_o    | NULL          | The ja4 original fingerprint.     |
-
-#### Example
+## Synopsis
 
 ```nginx
+events {}
+
 http {
     ssl_fingerprint on;
 
+    log_format fingerprint '$remote_addr $ssl_fingerprint_ja3_hash $ssl_fingerprint_ja4';
+    access_log logs/fingerprint.log fingerprint;
+
     server {
-        listen                 127.0.0.1:4433 ssl;
-        ssl_certificate        cert.pem;
-        ssl_certificate_key    priv.key;
-        error_log              /dev/stderr debug;
-        return                 200 "ja4: $ssl_fingerprint_ja4\nja3: $ssl_fingerprint_ja3";
+        listen 443 ssl;
+        server_name example.com;
+
+        ssl_certificate server.crt;
+        ssl_certificate_key server.key;
+
+        location / {
+            return 200 "$ssl_fingerprint_ja4\n";
+        }
     }
 }
+
 stream {
     ssl_fingerprint on;
 
     server {
-        listen                 127.0.0.1:4444 ssl;
-        ssl_certificate        cert.pem;
-        ssl_certificate_key    priv.key;
-        error_log              /dev/stderr debug;
-        return                 "ja4: $ssl_fingerprint_ja4\nja3: $ssl_fingerprint_ja3\n";
+        listen 8443 ssl;
+
+        ssl_certificate server.crt;
+        ssl_certificate_key server.key;
+
+        return "$ssl_fingerprint_ja4\n";
     }
 }
 ```
 
+## Installation
 
-## Quick Start
+Requires nginx with SSL support and the bundled [core patch](patches/nginx-1.29.3+.patch). No OpenSSL patch is required.
 
-Build with `--add-module`. When enabling Stream support, use `--with-stream`. Dynamic modules and a dynamic Stream subsystem are not supported.
+Apply the patch before compiling nginx:
 
-```bash
-
-# Clone
-
-$ git clone -b release-1.29.3 --depth=1 https://github.com/nginx/nginx
-$ cd nginx
-$ git clone -b openssl-3.5.5 --depth=1 https://github.com/openssl/openssl
-$ git clone -b main https://git.hanada.info/hanada/ngx_ssl_fingerprint_module
-
-# Patch
-
-$ patch -p1 < ngx_ssl_fingerprint_module/patches/nginx-1.29.3+.patch
-
-# Build
-
-$ ASAN_OPTIONS=symbolize=1 ./auto/configure --with-openssl=./openssl --with-openssl-opt="no-apps no-legacy no-idea no-mdc2 no-rc5 no-zlib no-ssl3 no-tests no-ssl3-method enable-rfc3779 enable-cms no-capieng no-rdrand" --with-stream_ssl_module --add-module=./ngx_ssl_fingerprint_module --with-debug --with-stream --with-http_v2_module --with-cc-opt="-fsanitize=address -O -fno-omit-frame-pointer" --with-ld-opt="-L/usr/local/lib -Wl,-E -lasan"
-$ make -j
-
-# Test
-
-$ objs/nginx -p . -c ./ngx_ssl_fingerprint_module/nginx.conf
-$ curl -k https://127.0.0.1:4433
-$ openssl s_client -connect localhost:4443
-
-# Fuzzing
-
-$ git clone https://github.com/tlsfuzzer/tlsfuzzer
-$ cd tlsfuzzer
-$ python3 -m venv venv
-$ venv/bin/pip install --pre tlslite-ng
-$ PYTHONPATH=. venv/bin/python scripts/test-client-hello-max-size.py
-
+```sh
+patch -d /path/to/nginx -p1 < /path/to/ngx_ssl_fingerprint_module/patches/nginx-1.29.3+.patch
 ```
+
+Run from the nginx source directory:
+
+```sh
+./configure \
+    --with-http_ssl_module \
+    --with-stream \
+    --with-stream_ssl_module \
+    --add-module=/path/to/ngx_ssl_fingerprint_module
+make
+```
+
+Omit the Stream options for an HTTP-only build. HTTP/2 and HTTP/3 require their corresponding nginx modules.
+
+Dynamic modules and a dynamic Stream subsystem are not supported.
+
+## Directives
+
+### ssl_fingerprint
+
+| Syntax: | **ssl_fingerprint** `on` \| `off`; |
+| :--- | :--- |
+| Default: | `ssl_fingerprint off;` |
+| Context: | `http`, `stream` |
+
+Enables or disables TLS ClientHello fingerprint collection. HTTP and Stream share this setting.
+
+## Embedded Variables
+
+The variables are available in HTTP and Stream. They describe the first ClientHello of the TLS connection and remain the same for requests that reuse that connection. Values are empty when collection is disabled or no ClientHello has been captured, including plain HTTP and TCP connections.
+
+### $ssl_greased
+
+`1` if the ClientHello cipher suite list contains a GREASE value, or `0` otherwise.
+
+### $ssl_fingerprint_ja3
+
+JA3 fingerprint string.
+
+### $ssl_fingerprint_ja3_hash
+
+MD5 hash of the JA3 fingerprint, in lowercase hexadecimal.
+
+### $ssl_fingerprint_ja4
+
+JA4 fingerprint with hashed cipher and extension components.
+
+### $ssl_fingerprint_ja4_r
+
+Raw JA4 fingerprint with sorted cipher and extension lists. The extension list excludes SNI and ALPN.
+
+### $ssl_fingerprint_ja4_o
+
+JA4 fingerprint with hashed components derived from the original cipher and extension order.
+
+### $ssl_fingerprint_ja4_ro
+
+Raw JA4 fingerprint preserving the original cipher and extension order. The extension list includes SNI and ALPN when present.
+
+GREASE values are excluded from the JA3 and JA4 fingerprints.
+
+## Tests
+
+Run the parser tests with a C compiler, OpenSSL development libraries, and Python 3:
+
+```sh
+bash util/run-unit-tests.sh
+```
+
+The integration tests use nginx-tests and a binary built with this module:
+
+```sh
+TEST_NGINX_BINARY=/path/to/nginx \
+PERL5LIB=/path/to/nginx-tests/lib \
+prove -v t/*.t
+```
+
+The integration suite requires Perl, IO::Socket::SSL, and the OpenSSL command-line tool. HTTP/3 tests additionally require CryptX. Lua callback tests require `ngx_http_lua_module` and its Lua libraries.
+
+## Author and license
+
+Copyright (C) 2020-2024 Phus Lu
+
+Copyright (C) Hanada
+
+Licensed under the [BSD 2-Clause License](LICENSE).
