@@ -1,65 +1,89 @@
 diff --git a/src/event/ngx_event_openssl.c b/src/event/ngx_event_openssl.c
+index e237afa..c65804c 100644
 --- a/src/event/ngx_event_openssl.c
 +++ b/src/event/ngx_event_openssl.c
-@@ -132,7 +132,12 @@
+@@ -96,6 +96,13 @@ static char *ngx_openssl_engine(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+ static void ngx_openssl_exit(ngx_cycle_t *cycle);
+
+
++#if (NGX_SSL_FINGERPRINT && NGX_EXT && NGX_SSL_CERT_COMPRESSION)
++static void ngx_ssl_fingerprint_callback(int write_p, int version,
++    int content_type, const void *buf, size_t len, ngx_ssl_conn_t *ssl,
++    void *arg);
++#endif
++
++
+ static ngx_command_t  ngx_openssl_commands[] = {
+
+     { ngx_string("ssl_engine"),
+@@ -132,6 +139,11 @@ ngx_module_t  ngx_openssl_module = {
  };
 
 
--int  ngx_ssl_connection_index;
 +#if (NGX_SSL_FINGERPRINT)
 +ngx_ssl_fingerprint_pt  ngx_ssl_fingerprint_handler;
 +#endif
 +
 +
-+int  ngx_ssl_connection_index;
+ int  ngx_ssl_connection_index;
  int  ngx_ssl_server_conf_index;
  int  ngx_ssl_session_cache_index;
- int  ngx_ssl_ticket_keys_index;
-@@ -2155,10 +2160,16 @@
-         return NGX_ERROR;
-     }
+@@ -2154,10 +2166,35 @@ ngx_ssl_create_connection(ngx_ssl_t *ssl, ngx_connection_t *c, ngx_uint_t flags)
 
--    c->ssl = sc;
--
--    return NGX_OK;
--}
-+    c->ssl = sc;
-+
+     c->ssl = sc;
+
 +#if (NGX_SSL_FINGERPRINT)
 +    if (!(flags & NGX_SSL_CLIENT) && ngx_ssl_fingerprint_handler) {
++#if (NGX_EXT && NGX_SSL_CERT_COMPRESSION)
++        SSL_set_msg_callback(sc->connection, ngx_ssl_fingerprint_callback);
++#else
 +        SSL_set_msg_callback(sc->connection, ngx_ssl_fingerprint_handler);
++#endif
 +    }
 +#endif
 +
-+    return NGX_OK;
+     return NGX_OK;
+ }
+
+
++#if (NGX_SSL_FINGERPRINT && NGX_EXT && NGX_SSL_CERT_COMPRESSION)
++
++static void
++ngx_ssl_fingerprint_callback(int write_p, int version, int content_type,
++    const void *buf, size_t len, ngx_ssl_conn_t *ssl, void *arg)
++{
++    ngx_ssl_fingerprint_handler(write_p, version, content_type, buf, len,
++                                ssl, arg);
++    ngx_ssl_cert_compression_message(write_p, version, content_type, buf, len,
++                                     ssl, arg);
 +}
-
-
++
++#endif
++
++
  ngx_ssl_session_t *
+ ngx_ssl_get_session(ngx_connection_t *c)
+ {
 diff --git a/src/event/ngx_event_openssl.h b/src/event/ngx_event_openssl.h
+index 29a4530..32c866b 100644
 --- a/src/event/ngx_event_openssl.h
 +++ b/src/event/ngx_event_openssl.h
-@@ -135,7 +135,12 @@
+@@ -120,6 +120,11 @@ struct ngx_ssl_connection_s {
      ngx_buf_t                  *buf;
      size_t                      buffer_size;
 
--    ngx_connection_handler_pt   handler;
 +#if (NGX_SSL_FINGERPRINT)
 +    void                       *fp_ctx;
 +    unsigned                    fp_collected:1;
 +#endif
 +
-+    ngx_connection_handler_pt   handler;
+     ngx_connection_handler_pt   handler;
 
      ngx_ssl_session_t          *session;
-     ngx_connection_handler_pt   save_session;
-@@ -439,7 +444,15 @@
-     char *text);
- void ngx_cdecl ngx_ssl_error(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
+@@ -399,6 +404,14 @@ void ngx_cdecl ngx_ssl_error(ngx_uint_t level, ngx_log_t *log, ngx_err_t err,
      char *fmt, ...);
--void ngx_ssl_cleanup_ctx(void *data);
-+void ngx_ssl_cleanup_ctx(void *data);
-+
+ void ngx_ssl_cleanup_ctx(void *data);
+
 +#if (NGX_SSL_FINGERPRINT)
 +typedef void (*ngx_ssl_fingerprint_pt)(int write_p, int version,
 +    int content_type, const void *buf, size_t len, ngx_ssl_conn_t *ssl,
@@ -67,30 +91,24 @@ diff --git a/src/event/ngx_event_openssl.h b/src/event/ngx_event_openssl.h
 +
 +extern ngx_ssl_fingerprint_pt  ngx_ssl_fingerprint_handler;
 +#endif
-
++
 
  extern int  ngx_ssl_connection_index;
+ extern int  ngx_ssl_server_conf_index;
 diff --git a/src/event/quic/ngx_event_quic_openssl_compat.c b/src/event/quic/ngx_event_quic_openssl_compat.c
+index dcdaa90..588dd15 100644
 --- a/src/event/quic/ngx_event_quic_openssl_compat.c
 +++ b/src/event/quic/ngx_event_quic_openssl_compat.c
-@@ -423,9 +423,15 @@
-     ngx_quic_connection_t        *qc;
+@@ -424,6 +424,12 @@ ngx_quic_compat_message_callback(int write_p, int version, int content_type,
      enum ssl_encryption_level_t   level;
 
--    if (!write_p) {
--        return;
--    }
-+    if (!write_p) {
+     if (!write_p) {
 +#if (NGX_SSL_FINGERPRINT)
 +        if (ngx_ssl_fingerprint_handler) {
 +            ngx_ssl_fingerprint_handler(write_p, version, content_type, buf,
 +                                        len, ssl, arg);
 +        }
 +#endif
-+        return;
-+    }
+         return;
+     }
 
-     c = ngx_ssl_get_connection(ssl);
-     qc = ngx_quic_get_connection(c);
- 
- 
